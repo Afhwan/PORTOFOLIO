@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { getPortfolioData } from "@/lib/portfolio-data";
-import { Portfolio } from "@/components/portfolio";
+import { getPortfolioData } from "@/lib/portfolio/queries";
+import { Portfolio } from "@/components/portfolio/site";
 
 export const revalidate = 60;
 

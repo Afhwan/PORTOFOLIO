@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getPortfolioData } from "@/lib/portfolio-data";
-import { Writeup } from "@/components/writeup";
+import { getPortfolioData } from "@/lib/portfolio/queries";
+import { Writeup } from "@/components/portfolio/writeup";
 
 export const revalidate = 60;
 

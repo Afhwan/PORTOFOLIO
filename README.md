@@ -1,68 +1,56 @@
 # Cybersecurity Engineer Portfolio
 
-Bilingual (Bahasa Indonesia / English) cybersecurity portfolio built with Next.js App Router, Supabase, and Vercel. This implementation covers the PRD's public site, authenticated content dashboard, search/filtering, Markdown write-ups, and basic Vercel Analytics integration.
+Bilingual (Bahasa Indonesia / English) cybersecurity portfolio built with Next.js App Router and Neon. It includes a public portfolio, a single-owner content dashboard, searchable content, Markdown write-ups, and Vercel Analytics.
 
 ## Repository structure
 
 ```text
 .
-├── frontend/                    # Next.js public site and /admin app
-│   ├── app/                      # App Router routes, metadata, styles
-│   ├── components/               # Public portfolio, admin, write-up UI
-│   ├── lib/                      # Supabase clients, data loading, types
-│   ├── next.config.ts            # Frontend security headers / Next.js config
-│   ├── middleware.ts             # Supabase auth token refresh
-│   ├── package.json              # Frontend dependencies and scripts
-│   └── .env.example              # Frontend environment template
+├── frontend/                  # Next.js public site, API routes, and /admin
+│   ├── app/                    # Pages and server-side API routes
+│   ├── components/
+│   │   ├── admin/              # Content management dashboard
+│   │   └── portfolio/          # Public site and write-up views
+│   ├── lib/
+│   │   ├── admin/              # Admin API validation
+│   │   ├── auth/               # Neon Managed Auth clients
+│   │   ├── database/           # Neon PostgreSQL connection
+│   │   └── portfolio/          # Public portfolio queries
+│   └── .env.example             # Safe environment-variable template
 ├── backend/
-│   ├── README.md                 # Supabase setup instructions
-│   └── supabase/migrations/       # PostgreSQL schema, RLS and Storage policies
-├── docs/                         # PRD and architecture notes
-├── package.json                  # npm workspace and root commands
-└── README.md
+│   ├── neon/migrations/         # PostgreSQL schema for Neon
+├── docs/                       # PRD and architecture notes
+├── .github/skills/              # Reusable visual-design skill and references
+└── package.json                # npm workspace and root commands
 ```
 
-`backend/` contains the Supabase/PostgreSQL backend definition. There is no separate Express server: Next.js calls Supabase REST/Auth/Storage directly, and PostgreSQL RLS enforces authorization. This keeps the Vercel deployment simple without weakening database-side access controls.
+`frontend/` is the deployable Next.js application. Database credentials stay server-side; public pages read published rows through the Neon driver, while dashboard CRUD is handled by authenticated Next.js API routes.
 
-The visual system uses a small set of custom CSS design tokens instead of Tailwind utility classes to preserve the portfolio's distinct terminal-inspired visual language without adding a utility build layer.
+## Neon setup
 
-## Local development
+1. Create a Neon project in an AWS region. Singapore (`aws-ap-southeast-1`) supports both Managed Auth and Object Storage.
+2. Open the project's **Auth** page for the branch and enable Managed Better Auth. Configure email/password sign-in and allowed origins for `http://localhost:3000` and your production domain.
+3. In **Connect**, select the branch, database, and role, then copy the pooled connection string.
+4. Copy `frontend/.env.example` to `frontend/.env.local` and set `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET`, `ADMIN_EMAIL`, and `NEXT_PUBLIC_SITE_URL`. Generate the cookie secret with `openssl rand -base64 32`. Set `ADMIN_EMAIL` to the one email address that should own the dashboard.
+5. In Neon SQL Editor, paste [`backend/neon/migrations/202610080001_initial_portfolio.sql`](./backend/neon/migrations/202610080001_initial_portfolio.sql) and click **Run** (not **Explain**). `EXPLAIN` is only for supported query statements; it cannot execute DDL such as `CREATE TABLE`. This schema uses PostgreSQL's built-in `gen_random_uuid()` and does not need an extension.
+6. For uploads, create a `public_read` Neon Object Storage bucket named `portfolio-assets` and a storage credential with read/write scope. Set the `AWS_*` and `PORTFOLIO_ASSETS_BUCKET` variables shown in `.env.example`. Public-read is intentional for portfolio images and downloadable CV files; never upload private documents.
+7. Install and run the app:
 
-1. Install Node.js 20.9 or newer.
-2. Install workspace packages from the repository root with `npm install`.
-3. Copy `frontend/.env.example` to `frontend/.env.local` and set the Supabase project URL, anon key, and public site URL.
-4. Run the SQL migration in `backend/supabase/migrations/202610070001_initial_portfolio.sql` using the Supabase SQL Editor.
-5. Create the single owner account in Supabase Authentication. Disable public sign-ups.
-6. Copy that account's UUID from Supabase Authentication and add it to the admin allowlist:
-
-   ```sql
-   insert into public.admins (user_id)
-   values ('YOUR_AUTH_USER_UUID');
+   ```sh
+   npm install
+   npm run dev
    ```
 
-7. Run `npm run dev` from the repository root and open `http://localhost:3000`.
+   Open `http://localhost:3000`. The site remains in preview mode until `DATABASE_URL` is set. In Neon Auth Configuration, temporarily enable email/password sign-up. Then set `ALLOW_ADMIN_SIGNUP=true`; `/admin` only permits registration for `ADMIN_EMAIL`. After creating the owner account, turn off sign-up in Neon Auth, set `ALLOW_ADMIN_SIGNUP=false`, and restart the app.
 
-The website is in an explicit preview mode while Supabase is not configured; it does not claim that local demo content is persisted. After configuration, an empty database renders empty states until content is added in `/admin`.
+Never commit `.env.local`, put credentials in `NEXT_PUBLIC_*`, or send a connection string or storage secret in chat. If a credential was accidentally copied into a tracked file, rotate it in Neon.
 
-## Content and access control
+## Deployment
 
-The owner dashboard at `/admin` uses Supabase Auth email/password. `public.admins` is an explicit allowlist; successfully authenticating is not sufficient for admin access. PostgreSQL Row Level Security is the authorization boundary: anonymous visitors can only read published rows, and only allowlisted users can create, update, or delete content. Never add a Supabase `service_role` key to this project or to a `NEXT_PUBLIC_*` variable.
-
-The dashboard manages the profile (one row), certificates, competitions/CTFs, projects, experience/education, and Markdown articles. Featured and publish toggles, bilingual content fields, image/CV upload, and a Markdown preview are included. Storage uploads are limited to 5 MB and JPG, PNG, WebP, or PDF; access is checked by Storage RLS policies. The `portfolio-assets` bucket is public-read by design because certificates and the downloadable CV are public portfolio assets.
-
-Public project search and category filters, certificate and competition search, bilingual section labels, theme switching, responsive navigation, article metadata, sitemap, robots rules, and the admin `noindex` directive are implemented.
-
-## Deploy to Vercel
-
-1. Create a Vercel project connected to this repository and set the project Root Directory to `frontend`.
-2. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_SITE_URL` for production and preview environments as appropriate.
-3. Deploy using the Next.js preset. Vercel Analytics is included; enable it in the Vercel project dashboard.
-4. Set the production domain in `NEXT_PUBLIC_SITE_URL`, redeploy, and verify `/sitemap.xml`, `/robots.txt`, `/admin`, and a published `/writeups/{slug}`.
-5. Review Supabase Auth rate limits, password policy, email confirmation, and optional MFA. Keep public sign-ups disabled and periodically review the `admins` allowlist.
-
-The Supabase client communicates directly with Supabase's REST and Storage APIs using the public anon key and the authenticated user's session. This intentionally uses Supabase Auth + RLS as the REST authorization layer rather than adding a separate Express server to Vercel; all admin mutations are still rejected by database policies unless the JWT belongs to the allowlisted owner. No service-role credentials are required by the app.
-
-Before launch, replace placeholder identity/contact information, publish only content and write-ups that are safe to disclose, check every credential URL, and review the site's privacy notice for analytics and contact links.
+1. Set the Vercel Root Directory to `frontend`.
+2. Add the same server-side Neon/Auth variables to the Vercel project. Add storage variables only if uploads are enabled.
+3. Set `NEXT_PUBLIC_SITE_URL` to the production domain, deploy, then verify `/`, `/admin`, `/robots.txt`, `/sitemap.xml`, and a published write-up.
+4. Restrict Neon Auth allowed origins to the production app domain. Keep `ALLOW_ADMIN_SIGNUP=false` after the owner account is created.
 
 ## Quality checks
 
@@ -72,5 +60,6 @@ npm run lint
 npm run build
 ```
 
-More details are available in [docs/architecture.md](./docs/architecture.md) and [backend/README.md](./backend/README.md).
-The original product requirements are preserved in [docs/PRD_Portfolio_Cybersecurity_Engineer.md](./docs/PRD_Portfolio_Cybersecurity_Engineer.md).
+For the data flow and security boundary, see [docs/architecture.md](./docs/architecture.md) and [backend/README.md](./backend/README.md). The original requirements are in [docs/PRD_Portfolio_Cybersecurity_Engineer.md](./docs/PRD_Portfolio_Cybersecurity_Engineer.md).
+
+This repository also includes the [Visual Design Director skill](./.github/skills/visual-design-director/SKILL.md). Repository-level Copilot instructions invoke it for visual deliverables and keep the design critique internal unless requested.

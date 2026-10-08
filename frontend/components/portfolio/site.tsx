@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import type { Locale, PortfolioData } from "@/lib/types";
 
@@ -32,7 +33,7 @@ const text = {
     contactText: "Terbuka untuk percakapan seputar cybersecurity, kolaborasi, dan peluang profesional.",
     email: "Email", linkedin: "LinkedIn", github: "GitHub", downloadCv: "Unduh CV ↗",
     admin: "Admin", footer: "Dibuat dengan rasa ingin tahu & niat baik.",
-    demoBanner: "Mode pratinjau: hubungkan Supabase untuk mengelola data dan menampilkan profil Anda.",
+    demoBanner: "Mode pratinjau: hubungkan database Neon untuk mengelola dan menampilkan profil Anda.",
     featured: "UNGGULAN", openRepo: "REPOSITORY ↗", liveDemo: "DEMO ↗",
     noProfile: "Lengkapi profil Anda melalui panel admin.",
     contactSetup: "Tambahkan tautan kontak melalui panel admin.",
@@ -64,7 +65,7 @@ const text = {
     contactText: "Open to conversations about cybersecurity, collaboration, and professional opportunities.",
     email: "Email", linkedin: "LinkedIn", github: "GitHub", downloadCv: "Download CV ↗",
     admin: "Admin", footer: "Built with curiosity & good intent.",
-    demoBanner: "Preview mode: connect Supabase to manage content and publish your profile.",
+    demoBanner: "Preview mode: connect a Neon database to manage and publish your profile.",
     featured: "FEATURED", openRepo: "REPOSITORY ↗", liveDemo: "LIVE DEMO ↗",
     noProfile: "Complete your profile in the admin panel.",
     contactSetup: "Add contact links in the admin panel.",
@@ -98,6 +99,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
   const [competitionQuery, setCompetitionQuery] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState("home");
   const labels = text[locale];
   const profile = data.profile;
 
@@ -115,6 +117,60 @@ export function Portfolio({ data }: { data: PortfolioData }) {
     document.documentElement.lang = locale;
     document.title = `${profile ? (locale === "id" ? profile.name_id : profile.name_en) : "Cybersecurity Engineer"} — Portfolio`;
   }, [locale, profile, theme]);
+
+  useEffect(() => {
+    if (!("IntersectionObserver" in window) ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const root = document.documentElement;
+    root.classList.add("motion-ready");
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.setAttribute("data-revealed", "true");
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -36px 0px" });
+
+    document.querySelectorAll<HTMLElement>("[data-reveal]:not([data-revealed='true'])")
+      .forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [projects, certificates, competitions, data.experiences, data.articles]);
+
+  useEffect(() => {
+    if (!("IntersectionObserver" in window)) return;
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((first, second) => first.boundingClientRect.top - second.boundingClientRect.top);
+      if (visible[0]?.target.id) setActiveSection(visible[0].target.id);
+    }, { rootMargin: "-22% 0px -68% 0px", threshold: 0 });
+
+    document.querySelectorAll("main [id]").forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let frame = 0;
+    const updateProgress = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        const progress = scrollable > 0 ? window.scrollY / scrollable : 0;
+        document.documentElement.style.setProperty("--scroll-progress", String(progress));
+        frame = 0;
+      });
+    };
+
+    updateProgress();
+    window.addEventListener("scroll", updateProgress, { passive: true });
+    window.addEventListener("resize", updateProgress);
+    return () => {
+      window.removeEventListener("scroll", updateProgress);
+      window.removeEventListener("resize", updateProgress);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
 
   const projects = useMemo(() => data.projects.filter((project) => {
     const matchesCategory = category === "all" || project.category === category;
@@ -154,13 +210,13 @@ export function Portfolio({ data }: { data: PortfolioData }) {
             <span className="brand-mark" aria-hidden="true">N_</span>
             <span>{name.toLocaleUpperCase()}<span style={{ color: "var(--accent)" }}>.SEC</span></span>
           </a>
-          <div className={`nav-links${mobileMenuOpen ? " mobile-open" : ""}`}>
-            <a href="#about" onClick={() => setMobileMenuOpen(false)}>{labels.navAbout}</a><a href="#projects" onClick={() => setMobileMenuOpen(false)}>{labels.navProjects}</a>
-            <a href="#proof" onClick={() => setMobileMenuOpen(false)}>{labels.navProof}</a><a href="#experience" onClick={() => setMobileMenuOpen(false)}>{labels.navExperience}</a>
-            <a href="#writing" onClick={() => setMobileMenuOpen(false)}>{labels.navWriting}</a><a href="#contact" onClick={() => setMobileMenuOpen(false)}>{labels.navContact}</a>
+          <div className={`nav-links${mobileMenuOpen ? " mobile-open" : ""}`} id="primary-navigation">
+            <a href="#about" aria-current={activeSection === "about" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navAbout}</a><a href="#projects" aria-current={activeSection === "projects" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navProjects}</a>
+            <a href="#proof" aria-current={activeSection === "proof" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navProof}</a><a href="#experience" aria-current={activeSection === "experience" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navExperience}</a>
+            <a href="#writing" aria-current={activeSection === "writing" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navWriting}</a><a href="#contact" aria-current={activeSection === "contact" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navContact}</a>
           </div>
           <div className="nav-tools">
-            <button className="tool-button mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>☰</button>
+            <button className="tool-button mobile-menu-button" type="button" aria-controls="primary-navigation" aria-expanded={mobileMenuOpen} aria-label={mobileMenuOpen ? (locale === "id" ? "Tutup navigasi" : "Close navigation") : (locale === "id" ? "Buka navigasi" : "Open navigation")} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>☰</button>
             <button className="tool-button" type="button" onClick={() => setLocale(locale === "id" ? "en" : "id")} aria-label={locale === "id" ? "Switch to English" : "Ganti ke Bahasa Indonesia"}>
               {locale === "id" ? "EN" : "ID"}
             </button>
@@ -171,9 +227,10 @@ export function Portfolio({ data }: { data: PortfolioData }) {
 
       <main id="main">
         <div className="shell">
+          <div className="reading-progress" aria-hidden="true" />
           {data.isDemo && <p className="notice" role="status">{labels.demoBanner}</p>}
           <section className="hero" id="home" style={{ border: 0 }}>
-            <div className="hero-copy">
+            <div className="hero-copy" data-reveal>
               <div className="availability">{labels.availability}</div>
               <h1>{labels.heroTitle}<br /><span>{labels.heroAccent}</span></h1>
               <p className="hero-lead">{title}. {bio || labels.heroLead}</p>
@@ -184,7 +241,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
               </div>
               {data.isDemo && <p className="draft-note">{labels.noProfile}</p>}
             </div>
-            <aside className="hero-card" aria-label={labels.profileCard}>
+            <aside className="hero-card" aria-label={labels.profileCard} data-reveal>
               <div className="card-top"><span className="mono">{labels.profileCard}</span><span>SYS.01</span></div>
               <div className="terminal">
                 <p><span className="value">01</span> <strong>role</strong> : &quot;{title}&quot;</p>
@@ -201,12 +258,12 @@ export function Portfolio({ data }: { data: PortfolioData }) {
           </section>
 
           <section id="about">
-            <div className="section-head">
+            <div className="section-head" data-reveal>
               <div><span className="mono">{labels.aboutEyebrow}</span><h2>{labels.aboutTitle}</h2></div>
               <p>{labels.aboutIntro}</p>
             </div>
-            <div className="about-grid">
-              <div className="about-stamp">{safeExternalUrl(profile?.photo_url ?? null) ? <img className="profile-photo" src={safeExternalUrl(profile?.photo_url ?? null) ?? undefined} alt={name} loading="lazy" /> : <span aria-hidden="true">[ PROFILE ]</span>}</div>
+            <div className="about-grid" data-reveal>
+              <div className="about-stamp">{safeExternalUrl(profile?.photo_url ?? null) ? <Image className="profile-photo" src={safeExternalUrl(profile?.photo_url ?? null) ?? ""} alt={name} width={500} height={500} unoptimized /> : <span aria-hidden="true">[ PROFILE ]</span>}</div>
               <div className="about-copy">
                 <p>{bio || labels.noProfile}</p>
                 <div className="skill-list">
@@ -217,18 +274,18 @@ export function Portfolio({ data }: { data: PortfolioData }) {
           </section>
 
           <section id="projects">
-            <div className="section-head">
+            <div className="section-head" data-reveal>
               <div><span className="mono">{labels.projectsEyebrow}</span><h2>{labels.projectsTitle}</h2></div>
               <p>{labels.projectsIntro}</p>
             </div>
-            <div className="filter-row" role="group" aria-label={locale === "id" ? "Filter proyek" : "Filter projects"}>
+            <div className="filter-row" role="group" aria-label={locale === "id" ? "Filter proyek" : "Filter projects"} data-reveal>
               {[["all", labels.all], ["appsec", "AppSec"], ["blue", "Blue team"], ["research", "Research"]].map(([value, label]) => (
                 <button className="filter-button" type="button" key={value} aria-pressed={category === value} onClick={() => setCategory(value)}>{label}</button>
               ))}
               <input className="filter-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={labels.searchProjects} aria-label={labels.searchProjects} />
             </div>
             {projects.length ? <div className="grid-three">
-              {projects.map((project) => <article className="content-card" key={project.id}>
+              {projects.map((project) => <article className="content-card" key={project.id} data-reveal>
                 <div className="eyebrow"><span>{project.category.toUpperCase()} / PROJECT</span>{project.is_featured && <span>{labels.featured}</span>}</div>
                 <h3>{locale === "id" ? project.title_id : project.title_en}</h3>
                 <p>{locale === "id" ? project.description_id : project.description_en}</p>
@@ -242,18 +299,18 @@ export function Portfolio({ data }: { data: PortfolioData }) {
           </section>
 
           <section id="proof">
-            <div className="section-head"><div><span className="mono">{labels.proofEyebrow}</span><h2>{labels.proofTitle}</h2></div></div>
-            <div className="proof-filters">
+            <div className="section-head" data-reveal><div><span className="mono">{labels.proofEyebrow}</span><h2>{labels.proofTitle}</h2></div></div>
+            <div className="proof-filters" data-reveal>
               <input className="filter-search" type="search" value={certificateQuery} onChange={(event) => setCertificateQuery(event.target.value)} placeholder={labels.searchCertificates} aria-label={labels.searchCertificates} />
               <input className="filter-search" type="search" value={competitionQuery} onChange={(event) => setCompetitionQuery(event.target.value)} placeholder={labels.searchCompetitions} aria-label={labels.searchCompetitions} />
             </div>
             <div className="grid-three">
-              {certificates.length ? certificates.map((certificate) => <article className="content-card" key={certificate.id}>
+              {certificates.length ? certificates.map((certificate) => <article className="content-card" key={certificate.id} data-reveal>
                 <div className="eyebrow"><span>{certificate.category.toUpperCase()}</span>{certificate.is_featured && <span>{labels.featured}</span>}</div>
                 <h3>{certificate.title}</h3><p>{certificate.issuer}{certificate.issue_date ? ` · ${formatDate(certificate.issue_date, locale)}` : ""}</p>
                 <div className="card-foot">{safeExternalUrl(certificate.credential_url) && <a className="card-link" href={safeExternalUrl(certificate.credential_url) ?? undefined} target="_blank" rel="noreferrer">{labels.verify}</a>}</div>
               </article>) : <article className="content-card empty-card"><span className="mono">{labels.certs}</span><h3>{data.certificates.length ? labels.noMatches : labels.noCertificates}</h3></article>}
-              {competitions.length ? competitions.map((competition) => <article className="content-card" key={competition.id}>
+              {competitions.length ? competitions.map((competition) => <article className="content-card" key={competition.id} data-reveal>
                 <div className="eyebrow"><span>CTF / COMPETITION</span>{competition.is_featured && <span>{labels.featured}</span>}</div>
                 <h3>{competition.name}</h3><p>{competition.organizer}{competition.date ? ` · ${formatDate(competition.date, locale)}` : ""}</p>
                 <p>{competition.achievement}</p><p>{locale === "id" ? competition.description_id : competition.description_en}</p>
@@ -263,9 +320,9 @@ export function Portfolio({ data }: { data: PortfolioData }) {
           </section>
 
           <section id="experience">
-            <div className="section-head"><div><span className="mono">{labels.experienceEyebrow}</span><h2>{labels.experienceTitle}</h2></div></div>
+            <div className="section-head" data-reveal><div><span className="mono">{labels.experienceEyebrow}</span><h2>{labels.experienceTitle}</h2></div></div>
             {data.experiences.length ? <div className="timeline">
-              {data.experiences.map((experience) => <article className="timeline-item" key={experience.id}>
+              {data.experiences.map((experience) => <article className="timeline-item" key={experience.id} data-reveal>
                 <span className="date">{formatDate(experience.start_date, locale)} — {experience.end_date ? formatDate(experience.end_date, locale) : (locale === "id" ? "SEKARANG" : "PRESENT")}</span>
                 <h3>{locale === "id" ? experience.role_id : experience.role_en}</h3>
                 <p>{experience.company} · {locale === "id" ? experience.description_id : experience.description_en}</p>
@@ -274,12 +331,12 @@ export function Portfolio({ data }: { data: PortfolioData }) {
           </section>
 
           <section id="writing">
-            <div className="section-head">
+            <div className="section-head" data-reveal>
               <div><span className="mono">{labels.writingEyebrow}</span><h2>{labels.writingTitle}</h2></div>
               <p>{labels.writingIntro}</p>
             </div>
             {data.articles.length ? <div className="grid-three">
-              {data.articles.map((article) => <article className="content-card" key={article.id}>
+              {data.articles.map((article) => <article className="content-card" key={article.id} data-reveal>
                 <div className="eyebrow"><span>{article.published_at ? formatDate(article.published_at, locale) : "WRITE-UP"}</span></div>
                 <h3>{locale === "id" ? article.title_id : article.title_en}</h3>
                 <p>{locale === "id" ? article.excerpt_id : article.excerpt_en}</p>
@@ -290,7 +347,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
           </section>
 
           <section id="contact">
-            <div className="contact-box">
+            <div className="contact-box" data-reveal>
               <div><span className="mono">{labels.contactEyebrow}</span><h2>{labels.contactTitle}</h2><p>{labels.contactText}</p></div>
               <div className="hero-actions">
                 {profile?.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email) && <a className="button button-primary" href={`mailto:${encodeURIComponent(profile.email)}`}>{labels.email} ↗</a>}

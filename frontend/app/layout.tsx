@@ -22,9 +22,10 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const enableAnalytics = process.env.VERCEL === "1";
   return (
     <html lang="id">
-      <body>{children}<Analytics /></body>
+      <body>{children}{enableAnalytics && <Analytics />}</body>
     </html>
   );
 }

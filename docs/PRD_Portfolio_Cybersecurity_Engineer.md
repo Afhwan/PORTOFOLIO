@@ -25,7 +25,7 @@ Masalah utama yang ingin dipecahkan: pemilik bukan ingin mengedit kode setiap ka
 - Website portfolio publik (frontend) dengan dukungan bilingual (ID/EN).
 - Control panel dengan autentikasi untuk CRUD konten.
 - Konten dinamis: profil, sertifikat, kompetisi, proyek, pengalaman, blog/write-up (opsional fase lanjut).
-- Deployment di Vercel dengan database Supabase.
+- Deployment di Vercel dengan Neon PostgreSQL.
 
 **Out-of-scope (untuk saat ini):**
 - Komentar publik / forum.
@@ -55,16 +55,16 @@ Masalah utama yang ingin dipecahkan: pemilik bukan ingin mengedit kode setiap ka
 | Layer | Teknologi |
 |---|---|
 | Frontend | Next.js (App Router), Tailwind CSS |
-| Backend API | Express.js (REST API) |
-| Database | Supabase (PostgreSQL + Supabase Auth + Supabase Storage) |
-| Deployment | Vercel (frontend + serverless API), Supabase Cloud (DB) |
+| Backend API | Next.js Route Handlers (REST API) |
+| Database | Neon PostgreSQL |
+| Deployment | Vercel (frontend + serverless API), Neon (database + Managed Auth + Object Storage opsional) |
 | i18n | next-intl / next-i18next (ID & EN) |
-| Autentikasi Admin | Supabase Auth (email/password) + JWT |
+| Autentikasi Admin | Neon Managed Better Auth (email/password) |
 
 ### 3.2 Arsitektur Tingkat Tinggi
 ```
-[Visitor] ──► [Next.js Frontend (Vercel)] ──► [Express.js API (Vercel Serverless)] ──► [Supabase]
-[Admin]   ──► [Control Panel /admin]       ──► [Express.js API + Auth Middleware] ──► [Supabase]
+[Visitor] ──► [Next.js Frontend (Vercel)] ──► [Neon PostgreSQL]
+[Admin]   ──► [Control Panel /admin]       ──► [Next.js API + Neon Managed Auth] ──► [Neon PostgreSQL]
 ```
 
 ### 3.3 Skema Database (Draft Awal)
@@ -94,9 +94,9 @@ Masalah utama yang ingin dipecahkan: pemilik bukan ingin mengedit kode setiap ka
 ### 4.2 Control Panel (Admin)
 | ID | Fitur | Prioritas |
 |---|---|---|
-| A-01 | Login admin (Supabase Auth, single user) | Must |
+| A-01 | Login admin (Neon Managed Auth, single user) | Must |
 | A-02 | Dashboard ringkasan konten | Must |
-| A-03 | CRUD Sertifikat (dengan upload gambar ke Supabase Storage) | Must |
+| A-03 | CRUD Sertifikat (dengan upload gambar ke Neon Object Storage) | Must |
 | A-04 | CRUD Kompetisi | Must |
 | A-05 | CRUD Proyek | Must |
 | A-06 | Edit profil & pengalaman | Must |
@@ -107,8 +107,8 @@ Masalah utama yang ingin dipecahkan: pemilik bukan ingin mengedit kode setiap ka
 
 ### 4.3 Non-Fungsional
 - **Performance:** LCP < 2.5s, Lighthouse score ≥ 90.
-- **Security:** HTTPS, rate limiting API, input sanitization, RLS (Row Level Security) di Supabase, JWT untuk endpoint admin, env variables tidak terekspos.
-- **Availability:** Mengikuti SLA Vercel & Supabase (target 99.9%).
+- **Security:** HTTPS, rate limiting API, input sanitization, otorisasi server-side untuk endpoint admin, environment variables tidak terekspos.
+- **Availability:** Mengikuti SLA Vercel & Neon (target 99.9%).
 - **Scalability:** Konten bertambah tanpa perlu perubahan skema besar.
 
 ---
@@ -120,14 +120,14 @@ Masalah utama yang ingin dipecahkan: pemilik bukan ingin mengedit kode setiap ka
 
 | Minggu | Deliverable |
 |---|---|
-| 1 | Setup project (Next.js + Tailwind), desain UI/UX (wireframe → mockup), setup Supabase project & skema database |
-| 2 | Setup Express.js API (struktur, koneksi Supabase, endpoint GET publik), implementasi i18n (ID/EN) |
+| 1 | Setup project (Next.js + Tailwind), desain UI/UX (wireframe → mockup), setup Neon project & skema database |
+| 2 | Setup Next.js Route Handlers, koneksi Neon, endpoint GET publik, implementasi i18n (ID/EN) |
 | 3 | Pengembangan halaman publik: hero, about, sertifikat, kompetisi, proyek, pengalaman, kontak; dark mode; responsive |
 | 4 | SEO, integrasi API ke frontend, deploy staging di Vercel, QA & bug fixing, **launch v1.0 publik** |
 
 **Kriteria Sukses Fase 1:**
 - Website publik dapat diakses di domain Vercel, bilingual, responsive.
-- Data sertifikat/kompetisi/proyek diambil dari Supabase (bukan hardcoded).
+- Data sertifikat/kompetisi/proyek diambil dari Neon (bukan hardcoded).
 
 ---
 
@@ -136,10 +136,10 @@ Masalah utama yang ingin dipecahkan: pemilik bukan ingin mengedit kode setiap ka
 
 | Minggu | Deliverable |
 |---|---|
-| 5 | Implementasi Supabase Auth + JWT middleware di Express; halaman login admin; proteksi route `/admin` |
-| 6 | CRUD Sertifikat & Kompetisi (API + UI control panel), upload gambar ke Supabase Storage |
+| 5 | Implementasi Neon Managed Auth; halaman login admin; proteksi route `/admin` |
+| 6 | CRUD Sertifikat & Kompetisi (API + UI control panel), upload gambar ke Neon Object Storage |
 | 7 | CRUD Proyek, edit Profil & Pengalaman, upload CV; dashboard ringkasan |
-| 8 | Validasi form, error handling, RLS policy di Supabase, security hardening, QA end-to-end, **launch v2.0** |
+| 8 | Validasi form, error handling, otorisasi server-side, security hardening, QA end-to-end, **launch v2.0** |
 
 **Kriteria Sukses Fase 2:**
 - Admin login dan dapat menambah sertifikat baru dalam < 5 menit tanpa redeploy.
@@ -174,12 +174,12 @@ Masalah utama yang ingin dipecahkan: pemilik bukan ingin mengedit kode setiap ka
 ## 7. Risiko & Mitigasi
 | Risiko | Mitigasi |
 |---|---|
-| Kredensial Supabase bocor | Env variables di Vercel, RLS aktif, jangan commit `.env` |
-| Free tier Vercel/Supabase limit (serverless timeout, DB storage) | Optimasi query, kompresi gambar, monitoring usage; upgrade plan jika perlu |
-| Serangan pada endpoint admin (brute force) | Rate limiting, Supabase Auth policy, opsi 2FA |
+| Kredensial Neon bocor | Env variables di Vercel, koneksi database hanya di server, jangan commit `.env` |
+| Free tier Vercel/Neon limit (serverless timeout, DB storage) | Optimasi query, kompresi gambar, monitoring usage; upgrade plan jika perlu |
+| Serangan pada endpoint admin (brute force) | Rate limiting, Neon Auth policy, opsi MFA |
 | Scope creep (fitur baru di tengah fase) | Semua permintaan baru masuk backlog Fase 3+ |
 
 ## 8. Asumsi & Ketergantungan
-- Pemilik sudah memiliki akun Vercel & Supabase.
+- Pemilik sudah memiliki akun Vercel & Neon.
 - Aset konten awal (foto, CV, daftar sertifikat) tersedia sebelum Minggu 3 Fase 1.
 - Satu orang admin; tidak ada kebutuhan role management.

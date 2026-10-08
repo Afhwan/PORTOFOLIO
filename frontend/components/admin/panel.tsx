@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { createClient } from "@/lib/supabase/client";
+import { authClient } from "@/lib/auth/client";
 import type { ManagedTable } from "@/lib/types";
 
 type FieldKind = "text" | "textarea" | "date" | "url" | "email" | "boolean" | "tags";
@@ -115,9 +115,27 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Terjadi kesalahan yang tidak diketahui.";
 }
 
+function getSignupErrorMessage(error: unknown) {
+  const message = getErrorMessage(error);
+  if (/email and password sign up is not enabled/i.test(message)) {
+    return "Pendaftaran email/password belum diaktifkan di Neon. Di Neon Console buka Project → Branch → Auth → Configuration, aktifkan email/password sign-up sementara, lalu coba lagi. Setelah akun pemilik berhasil dibuat, nonaktifkan sign-up di Neon dan set ALLOW_ADMIN_SIGNUP=false.";
+  }
+  return `Pendaftaran gagal: ${message}`;
+}
+
+async function requestAdminApi<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, { ...init, credentials: "same-origin" });
+  const body: unknown = response.status === 204 ? null : await response.json();
+  if (!response.ok) {
+    const message = body && typeof body === "object" && "error" in body &&
+      typeof body.error === "string" ? body.error : `Permintaan gagal (${response.status}).`;
+    throw new Error(message);
+  }
+  return body as T;
+}
+
 export function AdminPanel() {
-  const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const [supabase, setSupabase] = useState<ReturnType<typeof createClient> | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authorized, setAuthorized] = useState(false);
   const [activeTable, setActiveTable] = useState<DashboardSection>("overview");
@@ -129,105 +147,103 @@ export function AdminPanel() {
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [allowSignup, setAllowSignup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [uploadField, setUploadField] = useState("image_url");
   const [showPreview, setShowPreview] = useState(false);
 
-  const loadRows = useCallback(async (client: ReturnType<typeof createClient>, table: ManagedTable) => {
-    const { data, error } = await client.from(table).select("*");
-    if (error) throw new Error(`Gagal memuat ${tableLabels[table]}: ${error.message}`);
-    setRows(data ?? []);
+  const loadRows = useCallback(async (table: ManagedTable) => {
+    const data = await requestAdminApi<AdminRow[]>(`/api/admin/${table}`);
+    setRows(data);
   }, []);
 
-  const loadCounts = useCallback(async (client: ReturnType<typeof createClient>) => {
-    const results = await Promise.all(tableNames.map((table) =>
-      client.from(table).select("id", { count: "exact", head: true }),
-    ));
-    const failed = results.find((result) => result.error);
-    if (failed?.error) throw new Error(`Gagal memuat ringkasan konten: ${failed.error.message}`);
-    setCounts({
-      profiles: results[tableNames.indexOf("profiles")].count ?? 0,
-      certificates: results[tableNames.indexOf("certificates")].count ?? 0,
-      competitions: results[tableNames.indexOf("competitions")].count ?? 0,
-      projects: results[tableNames.indexOf("projects")].count ?? 0,
-      experiences: results[tableNames.indexOf("experiences")].count ?? 0,
-      articles: results[tableNames.indexOf("articles")].count ?? 0,
-    });
+  const loadCounts = useCallback(async () => {
+    const data = await requestAdminApi<Record<ManagedTable, number>>("/api/admin/counts");
+    setCounts(data);
   }, []);
 
-  const verifyAdmin = useCallback(async (client: ReturnType<typeof createClient>, currentUser: AuthUser) => {
-    const { data, error } = await client.from("admins").select("user_id").eq("user_id", currentUser.id).maybeSingle();
-    if (error) throw new Error(`Gagal memeriksa izin admin: ${error.message}`);
-    if (!data) {
-      setAuthorized(false);
-      setErrorMessage("Akun berhasil masuk tetapi belum terdaftar sebagai admin. Minta pemilik proyek menambahkan User ID ke tabel admins.");
-      await client.auth.signOut();
-      setUser(null);
-      return;
+  const verifyAdmin = useCallback(async () => {
+    const state = await requestAdminApi<{
+      configured: boolean;
+      authorized: boolean;
+      user: AuthUser | null;
+      allowSignup: boolean;
+    }>("/api/admin/session");
+    setConfigured(state.configured);
+    setAuthorized(state.authorized);
+    setUser(state.user);
+    setAllowSignup(state.allowSignup);
+    if (state.configured && !state.authorized) {
+      const session = await authClient.getSession();
+      if (session.data?.user) {
+        setErrorMessage("Akun ini tidak diizinkan mengelola portofolio. Pastikan email sama dengan ADMIN_EMAIL.");
+        await authClient.signOut();
+      }
     }
-    setErrorMessage("");
-    setAuthorized(true);
-    setUser(currentUser);
   }, []);
 
-  useEffect(() => {
-    if (!configured) return;
-    const client = createClient();
-    setSupabase(client);
-    client.auth.getSession().then(({ data, error }) => {
-      if (error) {
-        setErrorMessage(`Gagal memeriksa sesi: ${error.message}`);
-        return;
-      }
-      if (data.session?.user) {
-        void verifyAdmin(client, data.session.user).catch((error: unknown) => setErrorMessage(getErrorMessage(error)));
-      }
-    });
-    const { data: authListener } = client.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        void verifyAdmin(client, session.user).catch((error: unknown) => setErrorMessage(getErrorMessage(error)));
-      } else {
-        setUser(null);
-        setAuthorized(false);
-        setRows([]);
-      }
-    });
-    return () => authListener.subscription.unsubscribe();
-  }, [configured, verifyAdmin]);
+  const currentFields = useMemo(() => activeTable === "overview" ? [] : fields[activeTable], [activeTable]);
 
   useEffect(() => {
-    if (supabase && authorized) {
+    void verifyAdmin().catch((error: unknown) => {
+      setConfigured(false);
+      setErrorMessage(getErrorMessage(error));
+    });
+  }, [verifyAdmin]);
+
+  useEffect(() => {
+    if (authorized) {
       setErrorMessage("");
       if (activeTable === "overview") {
-        void loadCounts(supabase).catch((error: unknown) => setErrorMessage(getErrorMessage(error)));
+        void loadCounts().catch((error: unknown) => setErrorMessage(getErrorMessage(error)));
         setRows([]);
       } else {
-        void loadRows(supabase, activeTable).catch((error: unknown) => setErrorMessage(getErrorMessage(error)));
+        void loadRows(activeTable).catch((error: unknown) => setErrorMessage(getErrorMessage(error)));
       }
       setEditingId(null);
       setValues({});
       setUploadField(currentFields.find((field) => field.kind === "url")?.name ?? "");
     }
-  }, [activeTable, authorized, currentFields, loadCounts, loadRows, supabase]);
-
-  const currentFields = useMemo(() => activeTable === "overview" ? [] : fields[activeTable], [activeTable]);
+  }, [activeTable, authorized, currentFields, loadCounts, loadRows]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     setBusy(true);
     setErrorMessage("");
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await authClient.signIn.email({ email, password });
       if (error) {
         setErrorMessage(`Login gagal: ${error.message}`);
         return;
       }
-      if (data.user) await verifyAdmin(supabase, data.user);
+      await verifyAdmin();
     } catch (error: unknown) {
       setErrorMessage(`Login gagal: ${getErrorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRegister() {
+    setBusy(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+    try {
+      const { error } = await authClient.signUp.email({
+        name: "Portfolio Owner",
+        email,
+        password,
+      });
+      if (error) {
+        setErrorMessage(getSignupErrorMessage(error));
+        return;
+      }
+      await verifyAdmin();
+      setSuccessMessage("Akun dibuat. Jika email perlu diverifikasi, buka email Anda lalu masuk kembali.");
+    } catch (error: unknown) {
+      setErrorMessage(getSignupErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -257,7 +273,7 @@ export function AdminPanel() {
 
   async function saveRow(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || activeTable === "overview") return;
+    if (activeTable === "overview") return;
     const missingField = currentFields.find((field) =>
       field.required && !String(values[field.name] ?? "").trim(),
     );
@@ -283,21 +299,17 @@ export function AdminPanel() {
         else if (field.kind === "date" || field.kind === "url" || field.kind === "email") payload[field.name] = value ? String(value).trim() || null : null;
         else payload[field.name] = String(value || "").trim();
       });
-      if (activeTable === "profiles" && editingId) payload.id = editingId;
-
-      const result = editingId
-        ? await supabase.from(activeTable).update(payload).eq("id", editingId)
-        : await supabase.from(activeTable).insert(payload);
-      if (result.error) {
-        setErrorMessage(`Gagal menyimpan: ${result.error.message}`);
-        return;
-      }
+      await requestAdminApi(`/api/admin/${activeTable}${editingId ? `?id=${encodeURIComponent(editingId)}` : ""}`, {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       mutationCommitted = true;
-      await loadRows(supabase, activeTable);
+      await loadRows(activeTable);
       setSuccessMessage(`${tableLabels[activeTable]} berhasil disimpan.`);
       setEditingId(null);
       setValues({});
-      await loadCounts(supabase).catch((error: unknown) => setErrorMessage(`Konten tersimpan, tetapi ringkasan gagal dimuat: ${getErrorMessage(error)}`));
+      await loadCounts().catch((error: unknown) => setErrorMessage(`Konten tersimpan, tetapi ringkasan gagal dimuat: ${getErrorMessage(error)}`));
     } catch (error: unknown) {
       setErrorMessage(mutationCommitted
         ? `Konten tersimpan, tetapi daftar gagal diperbarui: ${getErrorMessage(error)}`
@@ -308,19 +320,15 @@ export function AdminPanel() {
   }
 
   async function deleteRow(row: AdminRow) {
-    if (!supabase || activeTable === "overview" || !row.id || !window.confirm(`Hapus ${getDisplayName(row, activeTable)}? Tindakan ini tidak dapat dibatalkan.`)) return;
+    if (activeTable === "overview" || !row.id || !window.confirm(`Hapus ${getDisplayName(row, activeTable)}? Tindakan ini tidak dapat dibatalkan.`)) return;
     setErrorMessage("");
     let mutationCommitted = false;
     try {
-      const { error } = await supabase.from(activeTable).delete().eq("id", row.id);
-      if (error) {
-        setErrorMessage(`Gagal menghapus: ${error.message}`);
-        return;
-      }
+      await requestAdminApi(`/api/admin/${activeTable}?id=${encodeURIComponent(row.id)}`, { method: "DELETE" });
       mutationCommitted = true;
-      await loadRows(supabase, activeTable);
+      await loadRows(activeTable);
       setSuccessMessage(`${tableLabels[activeTable]} berhasil dihapus.`);
-      await loadCounts(supabase).catch((error: unknown) => setErrorMessage(`Konten terhapus, tetapi ringkasan gagal dimuat: ${getErrorMessage(error)}`));
+      await loadCounts().catch((error: unknown) => setErrorMessage(`Konten terhapus, tetapi ringkasan gagal dimuat: ${getErrorMessage(error)}`));
       if (editingId === row.id) resetForm();
     } catch (error: unknown) {
       setErrorMessage(mutationCommitted
@@ -330,7 +338,7 @@ export function AdminPanel() {
   }
 
   async function uploadAsset(file: File) {
-    if (!supabase || !user || activeTable === "overview") return;
+    if (!user || activeTable === "overview") return;
     setErrorMessage("");
     setSuccessMessage("");
     if (file.size > 5 * 1024 * 1024) {
@@ -342,21 +350,15 @@ export function AdminPanel() {
       setErrorMessage("Format file harus JPG, PNG, WebP, atau PDF.");
       return;
     }
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-120);
-    const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
     setBusy(true);
     try {
-      const { data, error } = await supabase.storage.from("portfolio-assets").upload(path, file, {
-        contentType: file.type,
-        cacheControl: "3600",
-        upsert: false,
+      const formData = new FormData();
+      formData.set("file", file);
+      const result = await requestAdminApi<{ url: string }>("/api/admin/assets", {
+        method: "POST",
+        body: formData,
       });
-      if (error) {
-        setErrorMessage(`Upload gagal: ${error.message}`);
-        return;
-      }
-      const { data: publicUrl } = supabase.storage.from("portfolio-assets").getPublicUrl(data.path);
-      setValues((current) => ({ ...current, [uploadField]: publicUrl.publicUrl }));
+      setValues((current) => ({ ...current, [uploadField]: result.url }));
       setSuccessMessage("File berhasil diunggah. Simpan formulir untuk menerapkan tautannya.");
     } catch (error: unknown) {
       setErrorMessage(`Upload gagal: ${getErrorMessage(error)}`);
@@ -366,17 +368,26 @@ export function AdminPanel() {
   }
 
   async function logout() {
-    if (!supabase) return;
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) setErrorMessage(`Logout gagal: ${error.message}`);
+      const { error } = await authClient.signOut();
+      if (error) {
+        setErrorMessage(`Logout gagal: ${error.message}`);
+        return;
+      }
+      setUser(null);
+      setAuthorized(false);
+      setRows([]);
     } catch (error: unknown) {
       setErrorMessage(`Logout gagal: ${getErrorMessage(error)}`);
     }
   }
 
+  if (configured === null) {
+    return <main className="admin-shell"><Link className="brand" href="/">← Portfolio</Link><div className="admin-card"><p className="eyebrow">NEON SETUP</p><h1>Memeriksa konfigurasi...</h1></div></main>;
+  }
+
   if (!configured) {
-    return <main className="admin-shell"><Link className="brand" href="/">← Portfolio</Link><div className="admin-card"><p className="eyebrow">SUPABASE SETUP REQUIRED</p><h1>Konfigurasi belum tersedia.</h1><p>Salin <code>.env.example</code> ke <code>.env.local</code>, lalu isi URL proyek Supabase dan anon key.</p></div></main>;
+    return <main className="admin-shell"><Link className="brand" href="/">← Portfolio</Link><div className="admin-card"><p className="eyebrow">NEON SETUP REQUIRED</p><h1>Konfigurasi belum tersedia.</h1><p>Atur <code>DATABASE_URL</code>, <code>NEON_AUTH_BASE_URL</code>, <code>NEON_AUTH_COOKIE_SECRET</code>, dan <code>ADMIN_EMAIL</code> di <code>frontend/.env.local</code>, lalu jalankan migrasi Neon.</p>{errorMessage && <p className="admin-error" role="alert">{errorMessage}</p>}</div></main>;
   }
 
   return (
@@ -385,14 +396,15 @@ export function AdminPanel() {
         <div><Link className="brand" href="/">← Portfolio</Link><p className="eyebrow">CONTROL PANEL / SINGLE ADMIN</p></div>
         {user && <div className="admin-user"><span>{user.email}</span><button className="button button-quiet" type="button" onClick={logout}>Keluar</button></div>}
       </header>
-      {!user || !authorized || !supabase ? (
+      {!user || !authorized ? (
         <section className="admin-card login-card">
           <p className="eyebrow">AUTHENTICATED ACCESS</p><h1>Masuk ke dashboard.</h1>
-          <p>Gunakan akun admin Supabase yang terdaftar pada allowlist tabel <code>admins</code>.</p>
+          <p>Gunakan akun Neon Auth dengan alamat email yang sama seperti <code>ADMIN_EMAIL</code>.</p>
           <form className="admin-form" onSubmit={handleLogin}>
             <label>Email<input autoComplete="username" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
             <label>Password<input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-            <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Memproses..." : "Masuk dengan Supabase Auth"}</button>
+            <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Memproses..." : "Masuk dengan Neon Auth"}</button>
+            {allowSignup && <button className="button button-quiet" type="button" disabled={busy || !email || password.length < 8} onClick={() => void handleRegister()}>{busy ? "Memproses..." : "Buat akun pemilik"}</button>}
           </form>
           {errorMessage && <p className="admin-error" role="alert">{errorMessage}</p>}
         </section>
@@ -410,7 +422,7 @@ export function AdminPanel() {
             ))}
             <div className="admin-counts">
               <strong>{activeTable === "overview" ? Object.values(counts).reduce((total, count) => total + count, 0) : rows.length}</strong><span>{activeTable === "overview" ? "ITEM KONTEN" : tableLabels[activeTable].toLocaleUpperCase()}</span>
-              <p>Perubahan langsung menggunakan Supabase dengan proteksi RLS.</p>
+              <p>Perubahan dikirim ke API server dan hanya dapat dilakukan oleh akun pemilik.</p>
             </div>
           </aside>
           <section className="admin-main">
@@ -418,13 +430,13 @@ export function AdminPanel() {
             {successMessage && <p className="admin-success" role="status">{successMessage}</p>}
             {activeTable === "overview" ? (
               <>
-                <div className="admin-title-row"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h1>Dashboard</h1></div><button className="button button-quiet" type="button" onClick={() => void loadCounts(supabase).catch((error: unknown) => setErrorMessage(getErrorMessage(error)))}>Muat ulang</button></div>
+                <div className="admin-title-row"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h1>Dashboard</h1></div><button className="button button-quiet" type="button" onClick={() => void loadCounts().catch((error: unknown) => setErrorMessage(getErrorMessage(error)))}>Muat ulang</button></div>
                 <div className="overview-grid">{tableNames.map((table) => <button className="overview-card" type="button" key={table} onClick={() => setActiveTable(table)}><span className="eyebrow">{tableLabels[table]}</span><strong>{counts[table]}</strong><span>Kelola konten →</span></button>)}</div>
                 <div className="admin-card setup-checklist"><p className="eyebrow">PUBLISH CHECKLIST</p><h2>Siap untuk diperbarui tanpa redeploy</h2><ol><li>Lengkapi profil bilingual dan email kontak.</li><li>Tambahkan bukti dan proyek; centang <em>Publikasikan</em> untuk menampilkannya.</li><li>Tambahkan write-up Markdown, tanggal publikasi, dan tag.</li><li>Uji tampilan publik melalui tautan Portfolio.</li></ol></div>
               </>
             ) : (
               <>
-            <div className="admin-title-row"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h1>{tableLabels[activeTable]}</h1></div><button className="button button-quiet" type="button" onClick={() => void loadRows(supabase, activeTable)}>Muat ulang</button></div>
+            <div className="admin-title-row"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h1>{tableLabels[activeTable]}</h1></div><button className="button button-quiet" type="button" onClick={() => void loadRows(activeTable).catch((error: unknown) => setErrorMessage(getErrorMessage(error)))}>Muat ulang</button></div>
             <div className="admin-content-grid">
               <form className="admin-card admin-form" onSubmit={saveRow}>
                 <div className="admin-title-row"><h2>{editingId ? "Edit konten" : "Tambah konten"}</h2>{editingId && <button className="text-button" type="button" onClick={resetForm}>Batal</button>}</div>

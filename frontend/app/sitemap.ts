@@ -1,12 +1,11 @@
 import type { MetadataRoute } from "next";
-import { getPortfolioData } from "@/lib/portfolio-data";
+import { getPortfolioData } from "@/lib/portfolio/queries";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  if (!baseUrl) {
-    console.warn("NEXT_PUBLIC_SITE_URL is not configured; sitemap will use an example host.");
-  }
-  const origin = baseUrl ? new URL(baseUrl) : new URL("https://example.invalid");
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
+  if (!baseUrl) return [];
+  const origin = new URL(baseUrl);
   const data = await getPortfolioData();
   return [
     { url: new URL("/", origin).toString(), lastModified: new Date(), changeFrequency: "weekly", priority: 1 },
