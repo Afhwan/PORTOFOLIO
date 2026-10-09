@@ -18,25 +18,34 @@ const editableColumns: Record<ManagedTable, ReadonlySet<string>> = {
   ]),
   certificates: new Set([
     "title", "issuer", "issue_date", "expiry_date", "credential_url",
-    "image_url", "category", "is_featured", "is_published",
+    "image_url", "document_url", "media_urls", "category", "is_featured", "is_published",
   ]),
   competitions: new Set([
     "name", "organizer", "date", "achievement", "ctf_writeup_url",
-    "description_id", "description_en", "is_featured", "is_published",
+    "description_id", "description_en", "media_urls", "is_featured", "is_published",
   ]),
   projects: new Set([
     "title_id", "title_en", "slug", "description_id", "description_en",
-    "tech_stack", "repo_url", "demo_url", "image_url", "category",
+    "tech_stack", "repo_url", "demo_url", "image_url", "media_urls", "category",
     "is_featured", "is_published",
   ]),
   experiences: new Set([
-    "role_id", "role_en", "company", "start_date", "end_date",
-    "description_id", "description_en", "is_published",
+    "role_id", "role_en", "company", "experience_type", "start_date", "end_date",
+    "description_id", "description_en", "media_urls", "is_published",
   ]),
   articles: new Set([
     "title_id", "title_en", "slug", "excerpt_id", "excerpt_en",
-    "body_markdown", "tags", "published_at", "is_published",
+    "body_markdown", "media_urls", "tags", "published_at", "is_published",
   ]),
+};
+
+const allowedOptions: Partial<Record<ManagedTable, Record<string, readonly string[]>>> = {
+  projects: {
+    category: ["website", "game", "security", "research", "other"],
+  },
+  experiences: {
+    experience_type: ["work", "education", "seminar", "conference", "workshop", "volunteering", "other"],
+  },
 };
 
 export function isManagedTable(value: string): value is ManagedTable {
@@ -56,16 +65,31 @@ export function getEditableEntries(table: ManagedTable, value: unknown) {
   for (const [key, fieldValue] of entries) {
     if (["is_published", "is_featured"].includes(key)) {
       if (typeof fieldValue !== "boolean") throw new Error(`Invalid field value: ${key}.`);
-    } else if (["tech_stack", "tags"].includes(key)) {
+    } else if (["tech_stack", "tags", "media_urls"].includes(key)) {
+      const maxEntryLength = key === "media_urls" ? 2048 : 200;
       if (!Array.isArray(fieldValue) || fieldValue.length > 100 ||
-        fieldValue.some((tag) => typeof tag !== "string" || tag.length > 200)) {
+        fieldValue.some((tag) => typeof tag !== "string" || tag.length > maxEntryLength)) {
         throw new Error(`Invalid field value: ${key}.`);
+      }
+      if (key === "media_urls" && fieldValue.some((url) => {
+        try {
+          const parsed = new URL(url);
+          return !["https:", "http:"].includes(parsed.protocol);
+        } catch {
+          return true;
+        }
+      })) {
+        throw new Error("Media URLs must use HTTP or HTTPS.");
       }
     } else if (fieldValue !== null && (
       typeof fieldValue !== "string" ||
       fieldValue.length > (key === "body_markdown" ? 200_000 : 10_000)
     )) {
       throw new Error(`Invalid field value: ${key}.`);
+    }
+    const options = allowedOptions[table]?.[key];
+    if (options && typeof fieldValue === "string" && !options.includes(fieldValue)) {
+      throw new Error(`Invalid field value: ${key}. Choose one of: ${options.join(", ")}.`);
     }
   }
   return entries;

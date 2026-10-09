@@ -2,6 +2,15 @@ import { cache } from "react";
 import { getPool, isDatabaseConfigured } from "@/lib/database/neon";
 import type { PortfolioData } from "@/lib/types";
 
+export const getPublishedProfilePhotoUrl = cache(async function getPublishedProfilePhotoUrl(): Promise<string | null> {
+  if (!isDatabaseConfigured()) return null;
+
+  const { rows } = await getPool().query<{ photo_url: string | null }>(
+    "select photo_url from public.profiles where is_published order by updated_at desc limit 1",
+  );
+  return rows[0]?.photo_url ?? null;
+});
+
 export const getPortfolioData = cache(async function getPortfolioData(): Promise<PortfolioData> {
   if (!isDatabaseConfigured()) {
     return {

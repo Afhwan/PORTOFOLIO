@@ -53,6 +53,8 @@ Consult the reference library and technique catalog for principles and concrete 
 
 Never copy a brand's logo, signature composition, proprietary illustration, exact palette, or distinctive visual identity. Translate the underlying principle into an original system appropriate to the user's content.
 
+When a deliverable genuinely needs a company or technology mark, use an authoritative asset source such as [SVGL](https://github.com/pheralb/svgl) to find the correct SVG rather than approximating a logo. Preserve the mark and its brand colors, verify that it serves the content, and avoid implying endorsement. SVGL is an asset registry (available through the shadcn registry/MCP), not a source for general UI components.
+
 ## Format-specific responsibility
 
 - **Presentations:** one central idea per slide; vary composition according to the argument; use a strong opening and a decisive ending. Inspect actual slide renders, not only slide source.

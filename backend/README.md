@@ -2,6 +2,8 @@
 
 The application uses Neon PostgreSQL for portfolio content and Neon Managed Better Auth for the single dashboard owner. `backend/neon/migrations/202610080001_initial_portfolio.sql` creates the content tables, constraints, indexes, and `updated_at` triggers.
 
+The follow-up migration `backend/neon/migrations/202610090001_content_media_and_types.sql` adds image galleries for certificates, competitions, projects, experiences, and articles; adds PDF certificate links and experience types; and expands project categories to websites, games, security, research, and other. Run the initial migration first, then run this follow-up migration in the same Neon branch before using the new CMS fields. It remaps existing `appsec` and `blue` project categories to `security`; it does not delete existing content. These migrations are not run automatically by the app.
+
 ## First-time setup
 
 1. Create a Neon project in an AWS region. Singapore is supported by Managed Auth and Object Storage.

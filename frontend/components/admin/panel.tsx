@@ -1,14 +1,25 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { authClient } from "@/lib/auth/client";
 import type { ManagedTable } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 
-type FieldKind = "text" | "textarea" | "date" | "url" | "email" | "boolean" | "tags";
-type Field = { name: string; label: string; kind?: FieldKind; required?: boolean };
+type FieldKind = "text" | "textarea" | "date" | "url" | "email" | "boolean" | "tags" | "select" | "media";
+type Field = {
+  name: string;
+  label: string;
+  kind?: FieldKind;
+  required?: boolean;
+  options?: { value: string; label: string }[];
+};
 type AdminRow = Record<string, unknown> & { id?: string };
 type AuthUser = { id: string; email?: string };
 type DashboardSection = ManagedTable | "overview";
@@ -34,7 +45,9 @@ const fields: Record<ManagedTable, Field[]> = {
     { name: "issue_date", label: "Tanggal terbit", kind: "date" },
     { name: "expiry_date", label: "Tanggal kedaluwarsa", kind: "date" },
     { name: "credential_url", label: "URL verifikasi", kind: "url" },
-    { name: "image_url", label: "URL gambar", kind: "url" },
+    { name: "image_url", label: "URL gambar sertifikat", kind: "url" },
+    { name: "document_url", label: "URL file sertifikat (PDF)", kind: "url" },
+    { name: "media_urls", label: "Foto kegiatan / dokumentasi", kind: "media" },
     { name: "category", label: "Kategori", required: true },
     { name: "is_featured", label: "Tampilkan sebagai unggulan", kind: "boolean" },
     { name: "is_published", label: "Publikasikan", kind: "boolean" },
@@ -47,6 +60,7 @@ const fields: Record<ManagedTable, Field[]> = {
     { name: "ctf_writeup_url", label: "URL write-up", kind: "url" },
     { name: "description_id", label: "Deskripsi (Bahasa Indonesia)", kind: "textarea" },
     { name: "description_en", label: "Description (English)", kind: "textarea" },
+    { name: "media_urls", label: "Foto kegiatan / dokumentasi", kind: "media" },
     { name: "is_featured", label: "Tampilkan sebagai unggulan", kind: "boolean" },
     { name: "is_published", label: "Publikasikan", kind: "boolean" },
   ],
@@ -59,8 +73,21 @@ const fields: Record<ManagedTable, Field[]> = {
     { name: "tech_stack", label: "Teknologi (pisahkan dengan koma)", kind: "tags" },
     { name: "repo_url", label: "URL repository", kind: "url" },
     { name: "demo_url", label: "URL demo", kind: "url" },
-    { name: "image_url", label: "URL gambar", kind: "url" },
-    { name: "category", label: "Kategori: appsec, blue, research, other", required: true },
+    { name: "image_url", label: "URL gambar utama", kind: "url" },
+    { name: "media_urls", label: "Galeri proyek", kind: "media" },
+    {
+      name: "category",
+      label: "Jenis proyek",
+      kind: "select",
+      required: true,
+      options: [
+        { value: "website", label: "Website / aplikasi" },
+        { value: "game", label: "Game" },
+        { value: "security", label: "Cybersecurity" },
+        { value: "research", label: "Riset" },
+        { value: "other", label: "Lainnya" },
+      ],
+    },
     { name: "is_featured", label: "Tampilkan sebagai unggulan", kind: "boolean" },
     { name: "is_published", label: "Publikasikan", kind: "boolean" },
   ],
@@ -68,10 +95,26 @@ const fields: Record<ManagedTable, Field[]> = {
     { name: "role_id", label: "Jabatan (Bahasa Indonesia)", required: true },
     { name: "role_en", label: "Role (English)", required: true },
     { name: "company", label: "Organisasi / institusi" },
+    {
+      name: "experience_type",
+      label: "Jenis pengalaman",
+      kind: "select",
+      required: true,
+      options: [
+        { value: "work", label: "Pekerjaan / magang" },
+        { value: "education", label: "Pendidikan" },
+        { value: "seminar", label: "Seminar" },
+        { value: "conference", label: "Konferensi" },
+        { value: "workshop", label: "Workshop / pelatihan" },
+        { value: "volunteering", label: "Relawan / komunitas" },
+        { value: "other", label: "Lainnya" },
+      ],
+    },
     { name: "start_date", label: "Tanggal mulai", kind: "date" },
     { name: "end_date", label: "Tanggal selesai (kosong jika masih berlangsung)", kind: "date" },
     { name: "description_id", label: "Deskripsi (Bahasa Indonesia)", kind: "textarea" },
     { name: "description_en", label: "Description (English)", kind: "textarea" },
+    { name: "media_urls", label: "Foto kegiatan / dokumentasi", kind: "media" },
     { name: "is_published", label: "Publikasikan", kind: "boolean" },
   ],
   articles: [
@@ -81,6 +124,7 @@ const fields: Record<ManagedTable, Field[]> = {
     { name: "excerpt_id", label: "Ringkasan (Bahasa Indonesia)", kind: "textarea" },
     { name: "excerpt_en", label: "Excerpt (English)", kind: "textarea" },
     { name: "body_markdown", label: "Isi write-up (Markdown)", kind: "textarea", required: true },
+    { name: "media_urls", label: "Foto pendukung", kind: "media" },
     { name: "tags", label: "Tag (pisahkan dengan koma)", kind: "tags" },
     { name: "published_at", label: "Tanggal publikasi", kind: "date" },
     { name: "is_published", label: "Publikasikan write-up", kind: "boolean" },
@@ -153,6 +197,7 @@ export function AdminPanel() {
   const [successMessage, setSuccessMessage] = useState("");
   const [uploadField, setUploadField] = useState("image_url");
   const [showPreview, setShowPreview] = useState(false);
+  const [markdownFilename, setMarkdownFilename] = useState("");
 
   const loadRows = useCallback(async (table: ManagedTable) => {
     const data = await requestAdminApi<AdminRow[]>(`/api/admin/${table}`);
@@ -204,6 +249,7 @@ export function AdminPanel() {
       }
       setEditingId(null);
       setValues({});
+      setMarkdownFilename("");
       setUploadField(currentFields.find((field) => field.kind === "url")?.name ?? "");
     }
   }, [activeTable, authorized, currentFields, loadCounts, loadRows]);
@@ -255,11 +301,12 @@ export function AdminPanel() {
     currentFields.forEach((field) => {
       const value = row[field.name];
       if (field.kind === "boolean") nextValues[field.name] = Boolean(value);
-      else if (Array.isArray(value)) nextValues[field.name] = value.join(", ");
+      else if (Array.isArray(value)) nextValues[field.name] = value.join(field.kind === "media" ? "\n" : ", ");
       else nextValues[field.name] = typeof value === "string" ? (field.kind === "date" ? value.slice(0, 10) : value) : "";
     });
     setEditingId(typeof row.id === "string" ? row.id : null);
     setValues(nextValues);
+    setMarkdownFilename("");
     setSuccessMessage("");
     setErrorMessage("");
   }
@@ -268,6 +315,7 @@ export function AdminPanel() {
     if (activeTable === "overview") return;
     setEditingId(null);
     setValues(Object.fromEntries(currentFields.map((field) => [field.name, field.kind === "boolean" ? field.name === "is_published" && activeTable !== "articles" : ""])));
+    setMarkdownFilename("");
     setSuccessMessage("");
   }
 
@@ -296,6 +344,7 @@ export function AdminPanel() {
         const value = values[field.name];
         if (field.kind === "boolean") payload[field.name] = Boolean(value);
         else if (field.kind === "tags") payload[field.name] = String(value || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+        else if (field.kind === "media") payload[field.name] = String(value || "").split(/\r?\n/).map((url) => url.trim()).filter(Boolean);
         else if (field.kind === "date" || field.kind === "url" || field.kind === "email") payload[field.name] = value ? String(value).trim() || null : null;
         else payload[field.name] = String(value || "").trim();
       });
@@ -337,33 +386,75 @@ export function AdminPanel() {
     }
   }
 
-  async function uploadAsset(file: File) {
+  async function uploadAssets(files: File[], targetField: string) {
     if (!user || activeTable === "overview") return;
     setErrorMessage("");
     setSuccessMessage("");
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMessage("Ukuran file maksimal 5 MB.");
+    if (!files.length) return;
+    if (files.some((file) => file.size > 5 * 1024 * 1024)) {
+      setErrorMessage("Setiap file harus berukuran maksimal 5 MB.");
       return;
     }
     const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
-    if (!allowedTypes.includes(file.type)) {
+    if (files.some((file) => !allowedTypes.includes(file.type))) {
       setErrorMessage("Format file harus JPG, PNG, WebP, atau PDF.");
       return;
     }
+    if (targetField === "media_urls" && files.some((file) => !file.type.startsWith("image/"))) {
+      setErrorMessage("Galeri hanya menerima file gambar JPG, PNG, atau WebP.");
+      return;
+    }
+    if (targetField === "media_urls") {
+      const currentCount = String(values[targetField] ?? "").split(/\r?\n/).filter((url) => url.trim()).length;
+      if (currentCount + files.length > 100) {
+        setErrorMessage("Galeri dibatasi hingga 100 foto per konten.");
+        return;
+      }
+    }
     setBusy(true);
+    const uploadedUrls: string[] = [];
     try {
-      const formData = new FormData();
-      formData.set("file", file);
-      const result = await requestAdminApi<{ url: string }>("/api/admin/assets", {
-        method: "POST",
-        body: formData,
-      });
-      setValues((current) => ({ ...current, [uploadField]: result.url }));
-      setSuccessMessage("File berhasil diunggah. Simpan formulir untuk menerapkan tautannya.");
+      for (const file of files) {
+        const formData = new FormData();
+        formData.set("file", file);
+        const result = await requestAdminApi<{ url: string }>("/api/admin/assets", {
+          method: "POST",
+          body: formData,
+        });
+        uploadedUrls.push(result.url);
+        setValues((current) => {
+          if (targetField !== "media_urls") return { ...current, [targetField]: result.url };
+          const existing = String(current[targetField] ?? "").split(/\r?\n/).map((url) => url.trim()).filter(Boolean);
+          return { ...current, [targetField]: [...existing, result.url].join("\n") };
+        });
+      }
+      setSuccessMessage(`${uploadedUrls.length} file berhasil diunggah. Simpan formulir untuk menerapkan perubahan.`);
     } catch (error: unknown) {
-      setErrorMessage(`Upload gagal: ${getErrorMessage(error)}`);
+      const partial = uploadedUrls.length ? ` ${uploadedUrls.length} file sebelumnya berhasil diunggah dan sudah ditambahkan ke formulir.` : "";
+      setErrorMessage(`Upload gagal: ${getErrorMessage(error)}${partial}`);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function importMarkdown(file: File) {
+    setErrorMessage("");
+    setSuccessMessage("");
+    if (!file.name.toLocaleLowerCase().endsWith(".md") || file.size > 200_000) {
+      setErrorMessage("Pilih file .md berukuran maksimal 200 KB.");
+      return;
+    }
+    try {
+      const content = await file.text();
+      if (content.length > 200_000) {
+        setErrorMessage("Isi Markdown melebihi batas 200 KB.");
+        return;
+      }
+      setValues((current) => ({ ...current, body_markdown: content }));
+      setMarkdownFilename(file.name);
+      setSuccessMessage(`${file.name} dimuat ke editor. Simpan write-up untuk menyimpan perubahan.`);
+    } catch (error: unknown) {
+      setErrorMessage(`File Markdown tidak dapat dibaca: ${getErrorMessage(error)}`);
     }
   }
 
@@ -393,36 +484,43 @@ export function AdminPanel() {
   return (
     <main className="admin-shell">
       <header className="admin-header">
-        <div><Link className="brand" href="/">← Portfolio</Link><p className="eyebrow">CONTROL PANEL / SINGLE ADMIN</p></div>
-        {user && <div className="admin-user"><span>{user.email}</span><button className="button button-quiet" type="button" onClick={logout}>Keluar</button></div>}
+        <div className="admin-header-brand">
+          <Link className="brand" href="/"><span className="brand-mark" aria-hidden="true">N_</span><span>AFHWAN <span className="admin-brand-suffix">/ CMS</span></span></Link>
+          <span className="admin-owner-badge">RUANG KERJA PRIBADI</span>
+        </div>
+        {user && <div className="admin-user"><span className="admin-user-email">{user.email}</span><Link className="button button-quiet" href="/">Lihat situs ↗</Link><button className="button button-quiet" type="button" onClick={logout}>Keluar</button></div>}
       </header>
       {!user || !authorized ? (
         <section className="admin-card login-card">
-          <p className="eyebrow">AUTHENTICATED ACCESS</p><h1>Masuk ke dashboard.</h1>
-          <p>Gunakan akun Neon Auth dengan alamat email yang sama seperti <code>ADMIN_EMAIL</code>.</p>
+          <p className="eyebrow">AKSES PEMILIK</p><h1>Masuk ke CMS.</h1>
+          <p>Masuk menggunakan akun pemilik portofolio yang terhubung dengan <code>ADMIN_EMAIL</code>.</p>
           <form className="admin-form" onSubmit={handleLogin}>
-            <label>Email<input autoComplete="username" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-            <label>Password<input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-            <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Memproses..." : "Masuk dengan Neon Auth"}</button>
-            {allowSignup && <button className="button button-quiet" type="button" disabled={busy || !email || password.length < 8} onClick={() => void handleRegister()}>{busy ? "Memproses..." : "Buat akun pemilik"}</button>}
+            <label>Email<Input autoComplete="username" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+            <label>Password<Input autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+            <Button className="button button-primary" type="submit" disabled={busy}>{busy ? "Memproses..." : "Masuk"}</Button>
+            {allowSignup && <Button className="button button-quiet" variant="outline" type="button" disabled={busy || !email || password.length < 8} onClick={() => void handleRegister()}>{busy ? "Memproses..." : "Buat akun pemilik"}</Button>}
           </form>
           {errorMessage && <p className="admin-error" role="alert">{errorMessage}</p>}
+          <p className="admin-login-note">CMS pribadi · Akses dibatasi ke akun pemilik yang ditentukan di server.</p>
         </section>
       ) : (
         <div className="admin-layout">
           <aside className="admin-sidebar">
-            <p className="eyebrow">CONTENT</p>
-            <button className={`admin-nav-button${activeTable === "overview" ? " selected" : ""}`} type="button" onClick={() => setActiveTable("overview")}>
-              <span>Ringkasan</span>
-            </button>
-            {tableNames.map((table) => (
-              <button className={`admin-nav-button${activeTable === table ? " selected" : ""}`} key={table} type="button" onClick={() => setActiveTable(table)}>
-                <span>{tableLabels[table]}</span><span>{counts[table]}</span>
+            <nav className="admin-navigation" aria-label="Navigasi CMS">
+              <span className="admin-nav-label">RUANG KERJA</span>
+              <button className={`admin-nav-button${activeTable === "overview" ? " selected" : ""}`} type="button" aria-pressed={activeTable === "overview"} onClick={() => setActiveTable("overview")}>
+                <span>Ringkasan</span>
               </button>
-            ))}
-            <div className="admin-counts">
-              <strong>{activeTable === "overview" ? Object.values(counts).reduce((total, count) => total + count, 0) : rows.length}</strong><span>{activeTable === "overview" ? "ITEM KONTEN" : tableLabels[activeTable].toLocaleUpperCase()}</span>
-              <p>Perubahan dikirim ke API server dan hanya dapat dilakukan oleh akun pemilik.</p>
+              <span className="admin-nav-label admin-nav-label-spaced">KONTEN</span>
+              {tableNames.map((table) => (
+                <button className={`admin-nav-button${activeTable === table ? " selected" : ""}`} type="button" aria-pressed={activeTable === table} key={table} onClick={() => setActiveTable(table)}>
+                  <span>{tableLabels[table]}</span><span className="admin-nav-count">{counts[table]}</span>
+                </button>
+              ))}
+            </nav>
+            <div className="admin-sidebar-foot">
+              <span className="admin-owner-dot" aria-hidden="true" />
+              <div><strong>Akses pemilik</strong><span>Hanya Anda yang dapat mengelola konten</span></div>
             </div>
           </aside>
           <section className="admin-main">
@@ -430,21 +528,133 @@ export function AdminPanel() {
             {successMessage && <p className="admin-success" role="status">{successMessage}</p>}
             {activeTable === "overview" ? (
               <>
-                <div className="admin-title-row"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h1>Dashboard</h1></div><button className="button button-quiet" type="button" onClick={() => void loadCounts().catch((error: unknown) => setErrorMessage(getErrorMessage(error)))}>Muat ulang</button></div>
-                <div className="overview-grid">{tableNames.map((table) => <button className="overview-card" type="button" key={table} onClick={() => setActiveTable(table)}><span className="eyebrow">{tableLabels[table]}</span><strong>{counts[table]}</strong><span>Kelola konten →</span></button>)}</div>
-                <div className="admin-card setup-checklist"><p className="eyebrow">PUBLISH CHECKLIST</p><h2>Siap untuk diperbarui tanpa redeploy</h2><ol><li>Lengkapi profil bilingual dan email kontak.</li><li>Tambahkan bukti dan proyek; centang <em>Publikasikan</em> untuk menampilkannya.</li><li>Tambahkan write-up Markdown, tanggal publikasi, dan tag.</li><li>Uji tampilan publik melalui tautan Portfolio.</li></ol></div>
+                <div className="admin-title-row admin-page-heading">
+                  <div><h1>Ringkasan</h1><p>Kelola konten yang tampil di portofolio Anda.</p></div>
+                  <div className="admin-heading-actions">
+                    <span className="admin-save-note">Data disimpan ke Neon</span>
+                    <button className="button button-quiet" type="button" onClick={() => void loadCounts().catch((error: unknown) => setErrorMessage(getErrorMessage(error)))}>Muat ulang</button>
+                  </div>
+                </div>
+                <div className="overview-grid">{tableNames.map((table) => <button className="overview-card" type="button" key={table} onClick={() => setActiveTable(table)}>
+                  <span className="overview-card-label">{tableLabels[table]}</span>
+                  <strong>{counts[table]}</strong>
+                  <span className="overview-card-link">Buka koleksi <span aria-hidden="true">↗</span></span>
+                </button>)}</div>
+                <section className="publishing-guide" aria-labelledby="publishing-guide-title">
+                  <div><h2 id="publishing-guide-title">Alur publikasi</h2><p>Tinjau konten sebelum ditampilkan di situs.</p></div>
+                  <ol><li><span>1</span> Pilih area konten yang ingin diperbarui.</li><li><span>2</span> Simpan sebagai draft atau tandai untuk dipublikasikan.</li><li><span>3</span> Buka situs publik untuk memeriksa hasilnya.</li></ol>
+                  <Link className="card-link" href="/">Buka portofolio publik ↗</Link>
+                </section>
               </>
             ) : (
               <>
-            <div className="admin-title-row"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h1>{tableLabels[activeTable]}</h1></div><button className="button button-quiet" type="button" onClick={() => void loadRows(activeTable).catch((error: unknown) => setErrorMessage(getErrorMessage(error)))}>Muat ulang</button></div>
+            <div className="admin-title-row admin-page-heading"><div><h1>{tableLabels[activeTable]}</h1><p>Kelola, perbarui, dan atur status publikasi.</p></div><button className="button button-quiet" type="button" onClick={() => void loadRows(activeTable).catch((error: unknown) => setErrorMessage(getErrorMessage(error)))}>Muat ulang</button></div>
             <div className="admin-content-grid">
               <form className="admin-card admin-form" onSubmit={saveRow}>
-                <div className="admin-title-row"><h2>{editingId ? "Edit konten" : "Tambah konten"}</h2>{editingId && <button className="text-button" type="button" onClick={resetForm}>Batal</button>}</div>
-                {currentFields.map((field) => (
-                  <label className={field.kind === "boolean" ? "checkbox-field" : ""} key={field.name}>
-                    {field.kind === "boolean" ? <><input type="checkbox" checked={Boolean(values[field.name])} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.checked }))} />{field.label}</> : <>{field.label}{field.kind === "textarea" ? <textarea rows={field.name === "body_markdown" ? 14 : 4} required={field.required} value={String(values[field.name] ?? "")} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} /> : <input type={field.kind === "date" ? "date" : field.kind === "email" ? "email" : field.kind === "url" ? "url" : "text"} required={field.required} value={String(values[field.name] ?? "")} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} />}</>}
+                <div className="admin-title-row admin-form-heading"><h2>{editingId ? "Edit konten" : "Konten baru"}</h2>{editingId && <button className="text-button" type="button" onClick={resetForm}>Batal</button>}</div>
+                {currentFields.map((field) => {
+                  if (field.kind === "media") {
+                    const urls = String(values[field.name] ?? "").split(/\r?\n/).map((url) => url.trim()).filter(Boolean);
+                    return (
+                      <fieldset className="media-manager" key={field.name}>
+                        <legend>{field.label}</legend>
+                        <p>Unggah beberapa foto sekaligus. Gambar maksimal 5 MB per file.</p>
+                        <label className="media-upload-button">
+                          <span>{busy ? "Mengunggah..." : "Pilih foto kegiatan"}</span>
+                          <Input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            multiple
+                            disabled={busy}
+                            onChange={(event) => {
+                              const selected = Array.from(event.currentTarget.files ?? []);
+                              event.currentTarget.value = "";
+                              void uploadAssets(selected, field.name);
+                            }}
+                          />
+                        </label>
+                        {urls.length > 0 && (
+                          <ul className="media-preview-grid">
+                            {urls.map((url, index) => (
+                              <li key={`${url}-${index}`}>
+                                <Image src={url} alt={`Pratinjau foto ${index + 1}`} width={320} height={240} unoptimized />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  aria-label={`Hapus foto ${index + 1}`}
+                                  onClick={() => setValues((current) => ({
+                                    ...current,
+                                    [field.name]: urls.filter((_, itemIndex) => itemIndex !== index).join("\n"),
+                                  }))}
+                                >
+                                  Hapus
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </fieldset>
+                    );
+                  }
+                  if (field.kind === "boolean") {
+                    return (
+                      <label className="checkbox-field" key={field.name}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(values[field.name])}
+                          onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.checked }))}
+                        />
+                        {field.label}
+                      </label>
+                    );
+                  }
+                  return (
+                    <label key={field.name}>
+                      {field.label}
+                      {field.kind === "textarea" ? (
+                        <Textarea
+                          rows={field.name === "body_markdown" ? 14 : 4}
+                          required={field.required}
+                          value={String(values[field.name] ?? "")}
+                          onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                        />
+                      ) : field.kind === "select" ? (
+                        <select
+                          required={field.required}
+                          value={String(values[field.name] ?? "")}
+                          onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                        >
+                          <option value="">Pilih {field.label.toLocaleLowerCase()}</option>
+                          {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      ) : (
+                        <Input
+                          type={field.kind === "date" ? "date" : field.kind === "email" ? "email" : field.kind === "url" ? "url" : "text"}
+                          required={field.required}
+                          value={String(values[field.name] ?? "")}
+                          onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+                {activeTable === "articles" && (
+                  <label className="markdown-import">
+                    Impor naskah Markdown (.md, maks. 200 KB)
+                    <Input
+                      type="file"
+                      accept=".md,text/markdown,text/plain"
+                      disabled={busy}
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        event.currentTarget.value = "";
+                        if (file) void importMarkdown(file);
+                      }}
+                    />
+                    {markdownFilename && <span>Terakhir dimuat: {markdownFilename}</span>}
                   </label>
-                ))}
+                )}
                 {activeTable === "articles" && <div className="preview-control">
                   <button className="button button-quiet" type="button" aria-expanded={showPreview} onClick={() => setShowPreview(!showPreview)}>{showPreview ? "Sembunyikan preview" : "Preview write-up"}</button>
                   {showPreview && <div className="markdown-body admin-preview"><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(values.body_markdown ?? "")}</ReactMarkdown></div>}
@@ -455,14 +665,14 @@ export function AdminPanel() {
                       {currentFields.filter((field) => field.kind === "url").map((field) => <option key={field.name} value={field.name}>{field.label}</option>)}
                     </select>
                   </label>
-                  <label className="file-label">Pilih file<input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAsset(file); event.currentTarget.value = ""; }} /></label>
+                  <label className="file-label">Pilih file<Input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadAssets([file], uploadField); }} /></label>
                 </div>}
-                <div className="form-actions"><button className="button button-primary" disabled={busy} type="submit">{busy ? "Menyimpan..." : editingId ? "Simpan perubahan" : "Tambah konten"}</button><button className="button button-quiet" type="button" onClick={resetForm}>Bersihkan</button></div>
+                <div className="form-actions"><Button className="button button-primary" disabled={busy} type="submit">{busy ? "Menyimpan..." : editingId ? "Simpan perubahan" : "Simpan konten"}</Button><Button className="button button-quiet" variant="outline" type="button" onClick={resetForm}>Kosongkan</Button></div>
               </form>
               <div className="admin-list">
-                <h2>Konten tersimpan <span>{rows.length}</span></h2>
+                <div className="admin-list-heading"><div><h2>Konten tersimpan</h2><p>{rows.length} entri di koleksi ini</p></div><span>{rows.length}</span></div>
                 {rows.length ? rows.map((row) => <article className="admin-row" key={String(row.id)}>
-                  <div><strong>{getDisplayName(row, activeTable)}</strong><p>{row.is_published === false ? "Draft / tidak dipublikasikan" : "Dipublikasikan"}</p></div>
+                  <div className="admin-row-copy"><strong>{getDisplayName(row, activeTable)}</strong><Badge variant="outline" className={`admin-status${row.is_published === false ? " is-draft" : " is-published"}`}>{row.is_published === false ? "Draft" : "Dipublikasikan"}</Badge></div>
                   <div className="row-actions"><button className="text-button" type="button" onClick={() => editRow(row)}>Edit</button><button className="text-button danger" type="button" onClick={() => void deleteRow(row)}>Hapus</button></div>
                 </article>) : <p className="admin-empty">Belum ada data untuk bagian ini.</p>}
               </div>
