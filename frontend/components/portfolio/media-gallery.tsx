@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useGSAP } from "@gsap/react";
 
 type MediaGalleryProps = {
@@ -47,7 +48,21 @@ export function MediaGallery({ images, alt, labels }: MediaGalleryProps) {
   }
 
   return (
-    <div className="media-gallery" ref={frameRef} aria-label={alt}>
+    <div
+      className="media-gallery"
+      ref={frameRef}
+      role="group"
+      aria-label={alt}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          showImage(activeIndex - 1);
+        } else if (event.key === "ArrowRight") {
+          event.preventDefault();
+          showImage(activeIndex + 1);
+        }
+      }}
+    >
       <div className="media-gallery-frame">
         <Image
           ref={imageRef}
@@ -60,7 +75,7 @@ export function MediaGallery({ images, alt, labels }: MediaGalleryProps) {
       </div>
       {images.length > 1 && (
         <div className="media-gallery-controls" aria-label={`${alt}: ${activeIndex + 1}/${images.length}`}>
-          <button type="button" onClick={() => showImage(activeIndex - 1)} aria-label={labels.previous}>←</button>
+          <button type="button" onClick={() => showImage(activeIndex - 1)} aria-label={labels.previous}><ChevronLeft aria-hidden="true" size={20} /></button>
           <div className="media-gallery-dots" role="group" aria-label={alt}>
             {images.map((image, index) => (
               <button
@@ -72,8 +87,8 @@ export function MediaGallery({ images, alt, labels }: MediaGalleryProps) {
               />
             ))}
           </div>
-          <span className="media-gallery-count">{String(activeIndex + 1).padStart(2, "0")} / {String(images.length).padStart(2, "0")}</span>
-          <button type="button" onClick={() => showImage(activeIndex + 1)} aria-label={labels.next}>→</button>
+          <span className="media-gallery-count" aria-live="polite">{String(activeIndex + 1).padStart(2, "0")} / {String(images.length).padStart(2, "0")}</span>
+          <button type="button" onClick={() => showImage(activeIndex + 1)} aria-label={labels.next}><ChevronRight aria-hidden="true" size={20} /></button>
         </div>
       )}
     </div>

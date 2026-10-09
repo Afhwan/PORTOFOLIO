@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useState } from "react";
 import type { Article } from "@/lib/types";
+import { BlurText } from "@/components/ui/blur-text";
 import { MediaGallery } from "./media-gallery";
 
 export function Writeup({ article }: { article: Article }) {
@@ -25,7 +26,7 @@ export function Writeup({ article }: { article: Article }) {
       </nav>
       <article>
         <p className="eyebrow">{article.tags.join(" / ") || "WRITE-UP"}</p>
-        <h1>{english ? article.title_en : article.title_id}</h1>
+        <h1><BlurText text={english ? article.title_en : article.title_id} /></h1>
         <p className="writeup-lead">{english ? article.excerpt_en : article.excerpt_id}</p>
         {galleryImages.length > 0 && (
           <MediaGallery

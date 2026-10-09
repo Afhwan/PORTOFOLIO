@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { Menu, Moon, Sun, X } from "lucide-react";
 import type { Locale, PortfolioData } from "@/lib/types";
 import { NextjsLogoDark } from "@/components/ui/svgs/nextjsLogoDark";
 import { NextjsLogoLight } from "@/components/ui/svgs/nextjsLogoLight";
@@ -11,6 +12,7 @@ import { ReactDark } from "@/components/ui/svgs/reactDark";
 import { ReactLight } from "@/components/ui/svgs/reactLight";
 import { Unity } from "@/components/ui/svgs/unity";
 import { UnityDark } from "@/components/ui/svgs/unityDark";
+import { BlurText } from "@/components/ui/blur-text";
 import { MediaGallery } from "./media-gallery";
 
 const text = {
@@ -132,6 +134,17 @@ function setPointerSpotlight(event: ReactPointerEvent<HTMLElement>) {
   const bounds = event.currentTarget.getBoundingClientRect();
   event.currentTarget.style.setProperty("--pointer-x", `${event.clientX - bounds.left}px`);
   event.currentTarget.style.setProperty("--pointer-y", `${event.clientY - bounds.top}px`);
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const x = (event.clientX - bounds.left) / bounds.width - 0.5;
+    const y = (event.clientY - bounds.top) / bounds.height - 0.5;
+    event.currentTarget.style.setProperty("--card-tilt-x", `${-y * 2}deg`);
+    event.currentTarget.style.setProperty("--card-tilt-y", `${x * 2}deg`);
+  }
+}
+
+function resetPointerSpotlight(event: ReactPointerEvent<HTMLElement>) {
+  event.currentTarget.style.setProperty("--card-tilt-x", "0deg");
+  event.currentTarget.style.setProperty("--card-tilt-y", "0deg");
 }
 
 function setProfileTilt(event: ReactPointerEvent<HTMLElement>) {
@@ -353,6 +366,9 @@ export function Portfolio({ data }: { data: PortfolioData }) {
 
   return (
     <div className="portfolio-page">
+      <div className="aurora-background" aria-hidden="true">
+        <div className="aurora-background__layer" />
+      </div>
       <a className="skip-link" href="#main">{labels.skip}</a>
       <header className="topbar">
         <nav className="nav shell" aria-label={locale === "id" ? "Navigasi utama" : "Main navigation"}>
@@ -366,12 +382,12 @@ export function Portfolio({ data }: { data: PortfolioData }) {
             <a href="#writing" aria-current={activeSection === "writing" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navWriting}</a><a href="#contact" aria-current={activeSection === "contact" ? "location" : undefined} onClick={() => setMobileMenuOpen(false)}>{labels.navContact}</a>
           </div>
           <div className="nav-tools">
-            <button className="tool-button mobile-menu-button" type="button" aria-controls="primary-navigation" aria-expanded={mobileMenuOpen} aria-label={mobileMenuOpen ? (locale === "id" ? "Tutup navigasi" : "Close navigation") : (locale === "id" ? "Buka navigasi" : "Open navigation")} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>{mobileMenuOpen ? "×" : "☰"}</button>
+            <button className="tool-button mobile-menu-button" type="button" aria-controls="primary-navigation" aria-expanded={mobileMenuOpen} aria-label={mobileMenuOpen ? (locale === "id" ? "Tutup navigasi" : "Close navigation") : (locale === "id" ? "Buka navigasi" : "Open navigation")} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>{mobileMenuOpen ? <X aria-hidden="true" size={18} /> : <Menu aria-hidden="true" size={18} />}</button>
             <button className="tool-button" type="button" onClick={changeLocale} aria-label={locale === "id" ? "Switch to English" : "Ganti ke Bahasa Indonesia"}>
               {locale === "id" ? "EN" : "ID"}
             </button>
             <button className="tool-button" type="button" onClick={changeTheme} aria-label={locale === "id" ? "Ubah tema" : "Toggle theme"} title={locale === "id" ? "Ubah tema" : "Toggle theme"}>
-              <span className={`theme-icon theme-icon-${theme}`} aria-hidden="true">{theme === "dark" ? "☼" : "☾"}</span>
+              <span className={`theme-icon theme-icon-${theme}`} aria-hidden="true">{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</span>
             </button>
           </div>
         </nav>
@@ -383,7 +399,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
           {data.isDemo && <p className="notice" role="status">{labels.demoBanner}</p>}
           <section className="hero" id="home">
             <div className="hero-copy" data-reveal>
-              <h1>{labels.heroTitle}<br /><span>{labels.heroAccent}</span></h1>
+              <h1><BlurText text={labels.heroTitle} /><br /><span><BlurText text={labels.heroAccent} /></span></h1>
               <p className="hero-lead">{title}. {bio || labels.heroLead}</p>
               <div className="hero-actions">
                 <a className="button button-primary" href="#projects">{labels.viewWork} <span aria-hidden="true">↗</span></a>
@@ -452,7 +468,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
               <input className="filter-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={labels.searchProjects} aria-label={labels.searchProjects} />
             </div>
             {projects.length ? <div className="grid-three">
-              {projects.map((project) => <article className="content-card" key={project.id} data-reveal onPointerMove={setPointerSpotlight}>
+              {projects.map((project) => <article className="content-card" key={project.id} data-reveal onPointerMove={setPointerSpotlight} onPointerLeave={resetPointerSpotlight}>
                 <div className="eyebrow"><span>{projectCategoryLabels[project.category === "appsec" || project.category === "blue" ? "security" : project.category]} / PROJECT</span>{project.is_featured && <span>{labels.featured}</span>}</div>
                 {safeMediaUrls([project.image_url, ...(project.media_urls ?? [])]).length > 0 && (
                   <MediaGallery
@@ -484,7 +500,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
               <input className="filter-search" type="search" value={competitionQuery} onChange={(event) => setCompetitionQuery(event.target.value)} placeholder={labels.searchCompetitions} aria-label={labels.searchCompetitions} />
             </div>
             <div className="grid-three">
-              {certificates.length ? certificates.map((certificate) => <article className="content-card" key={certificate.id} data-reveal onPointerMove={setPointerSpotlight}>
+              {certificates.length ? certificates.map((certificate) => <article className="content-card" key={certificate.id} data-reveal onPointerMove={setPointerSpotlight} onPointerLeave={resetPointerSpotlight}>
                 <div className="eyebrow"><span>{certificate.category.toUpperCase()}</span>{certificate.is_featured && <span>{labels.featured}</span>}</div>
                 {safeMediaUrls([certificate.image_url, ...(certificate.media_urls ?? [])]).length > 0 && (
                   <MediaGallery
@@ -496,7 +512,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
                 <h3>{certificate.title}</h3><p>{certificate.issuer}{certificate.issue_date ? ` · ${formatDate(certificate.issue_date, locale)}` : ""}</p>
                 <div className="card-foot">{safeExternalUrl(certificate.credential_url) && <a className="card-link" href={safeExternalUrl(certificate.credential_url) ?? undefined} target="_blank" rel="noreferrer">{labels.verify}</a>}{safeExternalUrl(certificate.document_url) && <a className="card-link" href={safeExternalUrl(certificate.document_url) ?? undefined} target="_blank" rel="noreferrer">{labels.certificateDocument}</a>}</div>
               </article>) : <article className="content-card empty-card"><span className="mono">{labels.certs}</span><h3>{data.certificates.length ? labels.noMatches : labels.noCertificates}</h3></article>}
-              {competitions.length ? competitions.map((competition) => <article className="content-card" key={competition.id} data-reveal onPointerMove={setPointerSpotlight}>
+              {competitions.length ? competitions.map((competition) => <article className="content-card" key={competition.id} data-reveal onPointerMove={setPointerSpotlight} onPointerLeave={resetPointerSpotlight}>
                 <div className="eyebrow"><span>CTF / COMPETITION</span>{competition.is_featured && <span>{labels.featured}</span>}</div>
                 {safeMediaUrls(competition.media_urls ?? []).length > 0 && (
                   <MediaGallery
@@ -537,7 +553,7 @@ export function Portfolio({ data }: { data: PortfolioData }) {
               <p>{labels.writingIntro}</p>
             </div>
             {data.articles.length ? <div className="grid-three">
-              {data.articles.map((article) => <article className="content-card" key={article.id} data-reveal onPointerMove={setPointerSpotlight}>
+              {data.articles.map((article) => <article className="content-card" key={article.id} data-reveal onPointerMove={setPointerSpotlight} onPointerLeave={resetPointerSpotlight}>
                 <div className="eyebrow"><span>{article.published_at ? formatDate(article.published_at, locale) : "WRITE-UP"}</span></div>
                 {safeMediaUrls(article.media_urls ?? []).length > 0 && (
                   <MediaGallery

@@ -2,7 +2,21 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  BadgeCheck,
+  BookOpenText,
+  BriefcaseBusiness,
+  FolderKanban,
+  LayoutDashboard,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Trophy,
+  UserRound,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { authClient } from "@/lib/auth/client";
@@ -141,6 +155,15 @@ const tableLabels: Record<ManagedTable, string> = {
 };
 
 const tableNames = Object.keys(tableLabels) as ManagedTable[];
+const sectionIcons: Record<DashboardSection, LucideIcon> = {
+  overview: LayoutDashboard,
+  profiles: UserRound,
+  certificates: BadgeCheck,
+  competitions: Trophy,
+  projects: FolderKanban,
+  experiences: BriefcaseBusiness,
+  articles: BookOpenText,
+};
 
 function getDisplayName(row: AdminRow, table: ManagedTable) {
   const keys: Record<ManagedTable, string[]> = {
@@ -183,6 +206,8 @@ export function AdminPanel() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authorized, setAuthorized] = useState(false);
   const [activeTable, setActiveTable] = useState<DashboardSection>("overview");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [adminNavigationOpen, setAdminNavigationOpen] = useState(false);
   const [rows, setRows] = useState<AdminRow[]>([]);
   const [counts, setCounts] = useState<Record<ManagedTable, number>>({
     profiles: 0, certificates: 0, competitions: 0, projects: 0, experiences: 0, articles: 0,
@@ -198,6 +223,8 @@ export function AdminPanel() {
   const [uploadField, setUploadField] = useState("image_url");
   const [showPreview, setShowPreview] = useState(false);
   const [markdownFilename, setMarkdownFilename] = useState("");
+  const adminSidebarRef = useRef<HTMLElement>(null);
+  const adminMenuButtonRef = useRef<HTMLButtonElement>(null);
 
   const loadRows = useCallback(async (table: ManagedTable) => {
     const data = await requestAdminApi<AdminRow[]>(`/api/admin/${table}`);
@@ -230,6 +257,16 @@ export function AdminPanel() {
   }, []);
 
   const currentFields = useMemo(() => activeTable === "overview" ? [] : fields[activeTable], [activeTable]);
+  const closeAdminNavigation = useCallback(() => {
+    setAdminNavigationOpen(false);
+    if (window.matchMedia("(max-width: 900px)").matches) adminMenuButtonRef.current?.focus();
+  }, []);
+
+  const selectAdminSection = useCallback((section: DashboardSection) => {
+    setActiveTable(section);
+    setAdminNavigationOpen(false);
+    if (window.matchMedia("(max-width: 900px)").matches) adminMenuButtonRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     void verifyAdmin().catch((error: unknown) => {
@@ -253,6 +290,53 @@ export function AdminPanel() {
       setUploadField(currentFields.find((field) => field.kind === "url")?.name ?? "");
     }
   }, [activeTable, authorized, currentFields, loadCounts, loadRows]);
+
+  useEffect(() => {
+    if (!adminNavigationOpen) return;
+    const sidebar = adminSidebarRef.current;
+    if (!sidebar) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusableElements = () => Array.from(
+      sidebar.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+      ),
+    ).filter((element) => element.getClientRects().length > 0);
+    focusableElements()[0]?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeAdminNavigation();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = focusableElements();
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const handleViewportChange = () => {
+      if (window.matchMedia("(max-width: 900px)").matches) return;
+      sidebar.querySelector<HTMLElement>('.admin-nav-button[aria-pressed="true"]')?.focus();
+      setAdminNavigationOpen(false);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleViewportChange);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleViewportChange);
+    };
+  }, [adminNavigationOpen, closeAdminNavigation]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -488,6 +572,20 @@ export function AdminPanel() {
           <Link className="brand" href="/"><span className="brand-mark" aria-hidden="true">N_</span><span>AFHWAN <span className="admin-brand-suffix">/ CMS</span></span></Link>
           <span className="admin-owner-badge">RUANG KERJA PRIBADI</span>
         </div>
+        {user && authorized && (
+          <button
+            ref={adminMenuButtonRef}
+            className="admin-mobile-nav-toggle"
+            type="button"
+            aria-controls="admin-navigation"
+            aria-expanded={adminNavigationOpen}
+            aria-label={adminNavigationOpen ? "Tutup navigasi CMS" : "Buka navigasi CMS"}
+            onClick={() => adminNavigationOpen ? closeAdminNavigation() : setAdminNavigationOpen(true)}
+          >
+            {adminNavigationOpen ? <X aria-hidden="true" size={18} /> : <Menu aria-hidden="true" size={18} />}
+            <span>Menu</span>
+          </button>
+        )}
         {user && <div className="admin-user"><span className="admin-user-email">{user.email}</span><Link className="button button-quiet" href="/">Lihat situs ↗</Link><button className="button button-quiet" type="button" onClick={logout}>Keluar</button></div>}
       </header>
       {!user || !authorized ? (
@@ -504,19 +602,53 @@ export function AdminPanel() {
           <p className="admin-login-note">CMS pribadi · Akses dibatasi ke akun pemilik yang ditentukan di server.</p>
         </section>
       ) : (
-        <div className="admin-layout">
-          <aside className="admin-sidebar">
-            <nav className="admin-navigation" aria-label="Navigasi CMS">
+        <>
+        <button
+          className={`admin-sidebar-backdrop${adminNavigationOpen ? " is-visible" : ""}`}
+          type="button"
+          aria-label="Tutup navigasi CMS"
+          tabIndex={adminNavigationOpen ? 0 : -1}
+          onClick={closeAdminNavigation}
+        />
+        <div className={`admin-layout${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+          <aside
+            ref={adminSidebarRef}
+            className={`admin-sidebar${adminNavigationOpen ? " is-open" : ""}`}
+            id="admin-navigation"
+            aria-label="Navigasi CMS"
+            role={adminNavigationOpen ? "dialog" : undefined}
+            aria-modal={adminNavigationOpen ? true : undefined}
+          >
+            <div className="admin-sidebar-heading">
               <span className="admin-nav-label">RUANG KERJA</span>
-              <button className={`admin-nav-button${activeTable === "overview" ? " selected" : ""}`} type="button" aria-pressed={activeTable === "overview"} onClick={() => setActiveTable("overview")}>
-                <span>Ringkasan</span>
+              <button
+                className="admin-sidebar-collapse"
+                type="button"
+                aria-label={sidebarCollapsed ? "Perluas navigasi" : "Ciutkan navigasi"}
+                aria-expanded={!sidebarCollapsed}
+                onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              >
+                {sidebarCollapsed ? <PanelLeftOpen aria-hidden="true" size={17} /> : <PanelLeftClose aria-hidden="true" size={17} />}
+              </button>
+              <button className="admin-sidebar-dismiss" type="button" aria-label="Tutup navigasi CMS" onClick={closeAdminNavigation}>
+                <X aria-hidden="true" size={17} />
+              </button>
+            </div>
+            <nav className="admin-navigation" aria-label="Bagian konten">
+              <button className={`admin-nav-button${activeTable === "overview" ? " selected" : ""}`} type="button" aria-pressed={activeTable === "overview"} title="Ringkasan" onClick={() => selectAdminSection("overview")}>
+                <span className="admin-nav-icon"><LayoutDashboard aria-hidden="true" size={16} /></span>
+                <span className="admin-nav-text">Ringkasan</span>
               </button>
               <span className="admin-nav-label admin-nav-label-spaced">KONTEN</span>
-              {tableNames.map((table) => (
-                <button className={`admin-nav-button${activeTable === table ? " selected" : ""}`} type="button" aria-pressed={activeTable === table} key={table} onClick={() => setActiveTable(table)}>
-                  <span>{tableLabels[table]}</span><span className="admin-nav-count">{counts[table]}</span>
-                </button>
-              ))}
+              {tableNames.map((table) => {
+                const Icon = sectionIcons[table];
+                return (
+                  <button className={`admin-nav-button${activeTable === table ? " selected" : ""}`} type="button" aria-pressed={activeTable === table} key={table} title={tableLabels[table]} onClick={() => selectAdminSection(table)}>
+                    <span className="admin-nav-icon"><Icon aria-hidden="true" size={16} /></span>
+                    <span className="admin-nav-text">{tableLabels[table]}</span><span className="admin-nav-count">{counts[table]}</span>
+                  </button>
+                );
+              })}
             </nav>
             <div className="admin-sidebar-foot">
               <span className="admin-owner-dot" aria-hidden="true" />
@@ -681,6 +813,7 @@ export function AdminPanel() {
             )}
           </section>
         </div>
+        </>
       )}
     </main>
   );
